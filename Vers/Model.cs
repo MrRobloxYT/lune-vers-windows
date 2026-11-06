@@ -72,6 +72,7 @@ public sealed class Engine
     public double Time => preview is { } clock ? clock.Elapsed.TotalSeconds % 36 : Media.Position + (Media.Playing ? Settings.Offset : 0);
     /// Playing, or showing the built-in preview.
     public bool Playing => preview is not null || Media.Playing;
+    public bool Previewing => preview is not null;
     System.Diagnostics.Stopwatch? preview;
     /// `Vers.exe --preview`: plays the demo lyrics with no music, for testing.
     public void StartPreview() { Import(Demo.Lyrics, "demo.lrc"); preview = System.Diagnostics.Stopwatch.StartNew(); Changed?.Invoke(); }

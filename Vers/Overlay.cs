@@ -20,6 +20,10 @@ public sealed class LyricsCanvas : FrameworkElement
     public double Dark => FixedPresence >= 0 ? (engine.Settings.BlackBackground ? 1 : 0) : dark;
     public event Action<bool>? DarkChanged;
     bool wasDark;
+    double darkSince = -1;
+    /// The song whose black screen was closed (Esc or a click); it stays off until the next song.
+    object? dismissedFor;
+    public void Dismiss() { dismissedFor = engine.Lyrics; }
     public double? FixedTime { get; set; }       // for snapshots
     public double FixedPresence { get; set; } = -1;
 
@@ -48,11 +52,14 @@ public sealed class LyricsCanvas : FrameworkElement
         presence += (target - presence) * (1 - Math.Exp(-dt / (target > presence ? 0.25 : 0.6)));
         if (Math.Abs(target - presence) < 0.002) presence = target;
         // Black background fades in while a song with lyrics is playing, as on the Mac.
-        double wantDark = s.BlackBackground && s.Visible && engine.Playing && engine.Lyrics is { Words.Count: > 0 } ? 1 : 0;
+        // Never in the first 20 s after Vers starts (so it can't black out a PC as
+        // Windows boots), and never again for a song whose black screen was closed.
+        bool settled = now > 20 || engine.Previewing;
+        double wantDark = settled && s.BlackBackground && s.Visible && engine.Playing && engine.Lyrics is { Words.Count: > 0 } && !ReferenceEquals(dismissedFor, engine.Lyrics) ? 1 : 0;
         dark += (wantDark - dark) * (1 - Math.Exp(-dt / 0.35));
         if (Math.Abs(wantDark - dark) < 0.002) dark = wantDark;
         bool isDark = dark >= 0.5;
-        if (isDark != wasDark) { wasDark = isDark; DarkChanged?.Invoke(isDark); }
+        if (isDark != wasDark) { wasDark = isDark; darkSince = isDark ? now : -1; DarkChanged?.Invoke(isDark); }
         InvalidateVisual();
     }
 
@@ -85,6 +92,14 @@ public sealed class LyricsCanvas : FrameworkElement
         var s = engine.Settings;
         double fade = FixedPresence >= 0 ? FixedPresence : presence;
         if (Dark > 0.001 && !WindowIsBlack) dc.DrawRectangle(Paint(new Rgb(0, 0, 0), Dark), null, new Rect(0, 0, w, h));
+        // How to leave the black screen, shown for a few seconds each time it appears.
+        double hintAge = darkSince < 0 ? -1 : clock.Elapsed.TotalSeconds - darkSince;
+        if (FixedPresence < 0 && hintAge is >= 0 and < 6)
+        {
+            double ha = Clamp01(Math.Min(hintAge / 0.4, (6 - hintAge) / 0.8)) * 0.75;
+            var hint = Text("Space  pause     Esc or click  close the black screen", 15, Paint(new Rgb(1, 1, 1), ha), Face(FontWeights.Medium));
+            dc.DrawText(hint, new Point((w - hint.Width) / 2, h - 60));
+        }
         var doc = engine.Lyrics;
         if (doc is null || doc.Words.Count == 0 || fade <= 0.001) return;
         double t = FixedTime ?? engine.Time;
@@ -487,10 +502,12 @@ public sealed class OverlayWindow : Window
             if (dark) { Activate(); Focus(); }
         };
         if (!opaque) Background = new SolidColorBrush(Color.FromArgb(1, 0, 0, 0));
-        MouseLeftButtonDown += (_, _) => { if (Canvas.Dark >= 0.5) { Activate(); Focus(); } };
+        // A click or Esc closes the black screen for this song, so nobody gets stuck.
+        MouseDown += (_, _) => { if (Canvas.Dark >= 0.3) Canvas.Dismiss(); };
         KeyDown += (_, e) =>
         {
-            if (Canvas.Dark < 0.5) return;
+            if (Canvas.Dark < 0.3) return;
+            if (e.Key == System.Windows.Input.Key.Escape) { Canvas.Dismiss(); e.Handled = true; return; }
             if (e.Key == System.Windows.Input.Key.Space || e.Key == System.Windows.Input.Key.MediaPlayPause) { engine.Media.PlayPause(); e.Handled = true; }
             else if (e.Key == System.Windows.Input.Key.Right) engine.Media.Next();
             else if (e.Key == System.Windows.Input.Key.Left) engine.Media.Previous();
