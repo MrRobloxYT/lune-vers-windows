@@ -193,12 +193,14 @@ public sealed class GlassToggle : Border
         Cursor = Cursors.Hand;
         knob.RenderTransform = shift;
         Child = knob;
-        Background = new SolidColorBrush(Ui.White(0.12));
-        On = on;
+        // Start in place, without animating.
+        this.on = on;
+        shift.X = on ? 18 : 0;
+        Background = new SolidColorBrush(on ? Color.FromArgb(200, accent.R, accent.G, accent.B) : Ui.White(0.12));
         MouseLeftButtonUp += (_, e) => { On = !On; Changed?.Invoke(On); e.Handled = true; };
     }
 
-    public Color Accent { get => accent; set { accent = value; On = on; } }
+    public Color Accent { get => accent; set { if (accent == value) return; accent = value; if (on) ((SolidColorBrush)(Background.IsFrozen ? Background = Background.Clone() : Background)).Color = Color.FromArgb(200, value.R, value.G, value.B); } }
 
     public bool On
     {

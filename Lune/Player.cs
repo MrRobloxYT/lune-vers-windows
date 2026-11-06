@@ -394,7 +394,7 @@ public sealed class PlayerWindow : Window
         StackPanel page = lunePage;
         void Row(string label, FrameworkElement control, string? hint = null)
         {
-            var g = new Grid { Margin = new Thickness(0, 6, 0, 6) };
+            var g = new Grid { Margin = new Thickness(0, 4, 0, 4) };
             var text = new StackPanel { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 170, 0) };
             text.Children.Add(Ui.Label(label, 13.5, FontWeights.Medium, 0.92));
             if (hint is not null) { var h = Ui.Label(hint, 11, null, 0.5); h.TextWrapping = TextWrapping.Wrap; h.TextTrimming = TextTrimming.None; text.Children.Add(h); }
@@ -459,9 +459,11 @@ public sealed class PlayerWindow : Window
         stack.Children.Add(footer);
         ShowTab(false);
 
-        var card = Ui.Glass(stack, 24, 0.09, 22);
+        // Scrolls if a small window can't fit it all.
+        var scroll = new ScrollViewer { Content = stack, VerticalScrollBarVisibility = ScrollBarVisibility.Hidden, MaxHeight = 560 };
+        var card = Ui.Glass(scroll, 24, 0.09, 20);
         card.HorizontalAlignment = HorizontalAlignment.Center; card.VerticalAlignment = VerticalAlignment.Bottom;
-        card.Margin = new Thickness(0, 0, 0, 92);
+        card.Margin = new Thickness(0, 0, 0, 90);
         card.RenderTransformOrigin = new Point(0.5, 1);
         card.RenderTransform = new ScaleTransform(0.95, 0.95);
         card.MouseLeftButtonDown += (_, e) => e.Handled = true;
@@ -485,7 +487,7 @@ public sealed class PlayerWindow : Window
         void Save() { VersLink.Save(v); Dispatcher.BeginInvoke(FillVers); }
         void Row(string label, FrameworkElement control, string? hint = null)
         {
-            var g = new Grid { Margin = new Thickness(0, 6, 0, 6) };
+            var g = new Grid { Margin = new Thickness(0, 4, 0, 4) };
             var text = new StackPanel { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 170, 0) };
             text.Children.Add(Ui.Label(label, 13.5, FontWeights.Medium, 0.92));
             if (hint is not null) { var h = Ui.Label(hint, 11, null, 0.5); h.TextWrapping = TextWrapping.Wrap; h.TextTrimming = TextTrimming.None; text.Children.Add(h); }
@@ -515,13 +517,13 @@ public sealed class PlayerWindow : Window
         status.Margin = new Thickness(0, 0, 0, 6);
         versPage.Children.Add(status);
 
-        Row("Auto: style for each song", Toggle(v.AutoStyle, x => v.AutoStyle = x), "Fast lyrics get punchy styles, slow songs airy ones");
+        Row("Auto: style for each song", Toggle(v.AutoStyle, x => v.AutoStyle = x), "Picks a style to suit the song");
         versPage.Children.Add(Ui.Label("Style", 12, FontWeights.Medium, 0.6));
         versPage.Children.Add(Choices(Enum.GetValues<LyricStyle>().Select(x => (x, StyleInfo.Name(x))), x => !v.AutoStyle && v.Style == x, x => { v.Style = x; v.AutoStyle = false; }));
         Row("Auto: colors from the album", Toggle(v.AutoColor, x => v.AutoColor = x));
         Row("Black background", Toggle(v.BlackBackground, x => v.BlackBackground = x), "Space pauses while it's showing");
         Row("Only while music plays", Toggle(v.OnlyWhilePlaying, x => v.OnlyWhilePlaying = x));
-        Row("Above windows", Toggle(v.AboveWindows, x => v.AboveWindows = x));
+        Row("Above windows", Toggle(v.AboveWindows, x => v.AboveWindows = x), "Off keeps the lyrics behind your windows");
         var size = new GlassSlider((v.Size - 0.6) / 1.0, 150);
         size.MouseLeftButtonUp += (_, _) => { v.Size = Math.Round(0.6 + size.Value, 2); Save(); };
         Row("Text size", size);
@@ -534,7 +536,7 @@ public sealed class PlayerWindow : Window
         timing.Children.Add(later); timing.Children.Add(label); timing.Children.Add(earlier);
         Row("Timing", timing, "− shows lyrics later, + earlier");
         versPage.Children.Add(Ui.Label("Font", 12, FontWeights.Medium, 0.6));
-        versPage.Children.Add(Choices(VersSettings.Fonts.Select(f => (f, f.Replace(" Variable Display", ""))), f => v.Font == f, f => v.Font = f));
+        versPage.Children.Add(Choices(VersSettings.Fonts.Select(f => (f, f.Replace(" Variable Display", "").Replace(" Code", ""))), f => v.Font == f, f => v.Font = f));
     }
 
     DateTime previewUntil;
