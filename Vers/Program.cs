@@ -25,7 +25,7 @@ public static class Program
         }
         var app = new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
         Crash.Install("Vers", app);
-        app.Startup += (_, _) => new Shell(app).Start(!args.Contains("--background"));
+        app.Startup += (_, _) => new Shell(app).Start(!args.Contains("--background") && !args.Contains("--preview"), args.Contains("--preview"));
         app.Run();
         return 0;
     }
@@ -42,9 +42,9 @@ public sealed class Shell
 
     public Shell(Application app) { this.app = app; }
 
-    public async void Start(bool greet)
+    public async void Start(bool greet, bool preview = false)
     {
-        try { await StartCore(greet); }
+        try { await StartCore(greet, preview); }
         catch (Exception e) { Crash.Write("Vers", e, true); app.Shutdown(1); }
     }
 
@@ -57,9 +57,10 @@ public sealed class Shell
         _ = Task.Delay(7000).ContinueWith(_ => notice.Dispatcher.BeginInvoke(notice.Close));
     }
 
-    async Task StartCore(bool greet)
+    async Task StartCore(bool greet, bool preview)
     {
         engine = new Engine(app.Dispatcher);
+        if (preview) engine.StartPreview();
         engine.Changed += Layout;
         Microsoft.Win32.SystemEvents.DisplaySettingsChanged += (_, _) => app.Dispatcher.BeginInvoke(() => { layoutKey = ""; Layout(); });
         BuildTray();
@@ -85,7 +86,7 @@ public sealed class Shell
         windows.Clear();
         foreach (var m in chosen)
         {
-            var w = new OverlayWindow(engine);
+            var w = new OverlayWindow(engine, s.BlackBackground);
             w.Place(m);
             w.Show();
             w.Reposition();
@@ -168,6 +169,8 @@ public sealed class Shell
         menu.Items.Add(color);
         menu.Items.Add(new Separator());
 
+        menu.Items.Add(Item("Show Lyrics", () => { s.Visible = !s.Visible; engine.Update(); }, s.Visible));
+        menu.Items.Add(Item("Keep Screen Awake", () => { s.KeepAwake = !s.KeepAwake; engine.Update(); }, s.KeepAwake));
         menu.Items.Add(Item("Only While Playing", () => { s.OnlyWhilePlaying = !s.OnlyWhilePlaying; engine.Update(); }, s.OnlyWhilePlaying));
         menu.Items.Add(Item("Black Background", () => { s.BlackBackground = !s.BlackBackground; engine.Update(); }, s.BlackBackground));
         menu.Items.Add(Item("Show Above Windows", () => { s.AboveWindows = !s.AboveWindows; engine.Update(); }, s.AboveWindows, "Off keeps the lyrics on the desktop, behind your windows"));

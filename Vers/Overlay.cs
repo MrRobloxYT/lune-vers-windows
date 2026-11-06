@@ -13,6 +13,9 @@ public sealed class LyricsCanvas : FrameworkElement
     readonly Engine engine;
     readonly System.Diagnostics.Stopwatch clock = System.Diagnostics.Stopwatch.StartNew();
     double presence, lastFrame, dark;
+    bool keptAwake;
+    /// The window paints the black itself (the fast, opaque window).
+    public bool WindowIsBlack { get; set; }
     /// 0…1: how far the black background has faded in.
     public double Dark => FixedPresence >= 0 ? (engine.Settings.BlackBackground ? 1 : 0) : dark;
     public event Action<bool>? DarkChanged;
@@ -33,17 +36,19 @@ public sealed class LyricsCanvas : FrameworkElement
     {
         if (!IsVisible) return;
         double now = clock.Elapsed.TotalSeconds;
-        // 60 fps while words are arriving, 20 when nothing moves.
-        bool busy = Busy();
-        if (now - lastFrame < (busy ? 1 / 61.0 : 1 / 20.0)) return;
+        // 60 fps whenever lyrics are on screen; a slow tick when nothing shows.
+        bool busy = presence > 0.001 || dark > 0.001 || Busy();
+        if (now - lastFrame < (busy ? 1 / 62.0 : 1 / 10.0)) return;
         double dt = Math.Min(0.1, now - lastFrame);
         lastFrame = now;
         var s = engine.Settings;
-        double target = (!s.OnlyWhilePlaying || engine.Media.Playing) ? 1 : 0;
+        double target = s.Visible && (!s.OnlyWhilePlaying || engine.Playing) ? 1 : 0;
+        bool awake = s.KeepAwake && engine.Playing;
+        if (awake != keptAwake) { keptAwake = awake; Native.KeepAwake(awake); }
         presence += (target - presence) * (1 - Math.Exp(-dt / (target > presence ? 0.25 : 0.6)));
         if (Math.Abs(target - presence) < 0.002) presence = target;
         // Black background fades in while a song with lyrics is playing, as on the Mac.
-        double wantDark = s.BlackBackground && engine.Media.Playing && engine.Lyrics is { Words.Count: > 0 } ? 1 : 0;
+        double wantDark = s.BlackBackground && s.Visible && engine.Playing && engine.Lyrics is { Words.Count: > 0 } ? 1 : 0;
         dark += (wantDark - dark) * (1 - Math.Exp(-dt / 0.35));
         if (Math.Abs(wantDark - dark) < 0.002) dark = wantDark;
         bool isDark = dark >= 0.5;
@@ -79,7 +84,7 @@ public sealed class LyricsCanvas : FrameworkElement
         double w = ActualWidth, h = ActualHeight;
         var s = engine.Settings;
         double fade = FixedPresence >= 0 ? FixedPresence : presence;
-        if (Dark > 0.001) dc.DrawRectangle(Paint(new Rgb(0, 0, 0), Dark), null, new Rect(0, 0, w, h));
+        if (Dark > 0.001 && !WindowIsBlack) dc.DrawRectangle(Paint(new Rgb(0, 0, 0), Dark), null, new Rect(0, 0, w, h));
         var doc = engine.Lyrics;
         if (doc is null || doc.Words.Count == 0 || fade <= 0.001) return;
         double t = FixedTime ?? engine.Time;
@@ -438,12 +443,20 @@ public sealed class OverlayWindow : Window
     Native.Monitor? monitor;
     readonly System.Windows.Threading.DispatcherTimer layer;
 
-    public OverlayWindow(Engine engine)
+    readonly bool opaque;
+    byte alpha = 255;
+
+    /// `opaque`: with the black background on, the window is a plain black
+    /// window drawn by the graphics card and faded by the compositor. That's
+    /// far smoother than a see-through window, which Windows copies back from
+    /// the graphics card every frame.
+    public OverlayWindow(Engine engine, bool opaque)
     {
         this.engine = engine;
+        this.opaque = opaque;
         WindowStyle = WindowStyle.None;
-        AllowsTransparency = true;
-        Background = Brushes.Transparent;
+        AllowsTransparency = !opaque;
+        Background = opaque ? Brushes.Black : Brushes.Transparent;
         ShowInTaskbar = false;
         ShowActivated = false;
         ResizeMode = ResizeMode.NoResize;
@@ -451,7 +464,19 @@ public sealed class OverlayWindow : Window
         Topmost = engine.Settings.AboveWindows;
         Canvas = new LyricsCanvas(engine);
         Content = Canvas;
-        SourceInitialized += (_, _) => { hwnd = new WindowInteropHelper(this).Handle; Native.MakeClickThrough(hwnd); };
+        SourceInitialized += (_, _) =>
+        {
+            hwnd = new WindowInteropHelper(this).Handle;
+            Native.MakeClickThrough(hwnd);
+            if (opaque) { alpha = 0; Native.SetAlpha(hwnd, 0); }
+        };
+        Canvas.WindowIsBlack = opaque;
+        if (opaque) CompositionTarget.Rendering += (_, _) =>
+        {
+            if (hwnd == IntPtr.Zero) return;
+            var a = (byte)Math.Round(Math.Clamp(Canvas.Dark, 0, 1) * 255);
+            if (a != alpha) { alpha = a; Native.SetAlpha(hwnd, a); }
+        };
         // While the screen is black it takes clicks and keys, so nothing hidden
         // gets clicked and Space pauses the song (handy with one monitor).
         Canvas.DarkChanged += dark =>
@@ -461,7 +486,7 @@ public sealed class OverlayWindow : Window
             Canvas.IsHitTestVisible = dark;
             if (dark) { Activate(); Focus(); }
         };
-        Background = new SolidColorBrush(Color.FromArgb(1, 0, 0, 0));
+        if (!opaque) Background = new SolidColorBrush(Color.FromArgb(1, 0, 0, 0));
         MouseLeftButtonDown += (_, _) => { if (Canvas.Dark >= 0.5) { Activate(); Focus(); } };
         KeyDown += (_, e) =>
         {

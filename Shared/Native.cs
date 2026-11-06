@@ -32,6 +32,14 @@ public static class Native
         SetWindowLongPtr(hwnd, GWL_EXSTYLE, new IntPtr(style));
     }
 
+    [DllImport("user32.dll")] static extern bool SetLayeredWindowAttributes(IntPtr hwnd, uint key, byte alpha, uint flags);
+    /// Fades a whole window: done by the compositor, so it costs nothing.
+    public static void SetAlpha(IntPtr hwnd, byte alpha) => SetLayeredWindowAttributes(hwnd, 0, alpha, 0x2);
+
+    [DllImport("kernel32.dll")] static extern uint SetThreadExecutionState(uint flags);
+    /// Keeps the display awake (true) or lets it sleep as usual (false).
+    public static void KeepAwake(bool on) => SetThreadExecutionState(on ? 0x80000002u : 0x80000000u);
+
     [StructLayout(LayoutKind.Sequential)]
     public struct RECT { public int Left, Top, Right, Bottom; public int Width => Right - Left; public int Height => Bottom - Top; }
 

@@ -334,8 +334,8 @@ public sealed class EdgeLight
     {
         double now = clock.Elapsed.TotalSeconds;
         var s = model.Settings;
-        // 60 fps for Music Sync, 30 for the calmer modes.
-        double interval = s.Motion == Motion.MusicSync ? 1 / 61.0 : 1 / 31.0;
+        // 60 fps in every mode, as smooth as the Mac.
+        double interval = 1 / 62.0;
         if (now - lastFrame < interval) return;
         float dt = (float)Math.Min(0.05, now - lastFrame);
         lastFrame = now;

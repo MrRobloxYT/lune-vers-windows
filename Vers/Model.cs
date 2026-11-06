@@ -69,7 +69,12 @@ public sealed class Engine
     public LyricStyle Style => Settings.AutoStyle ? AutoPick ?? Settings.Style : Settings.Style;
 
     /// The song position the lyrics follow, with the timing nudge.
-    public double Time => Media.Position + (Media.Playing ? Settings.Offset : 0);
+    public double Time => preview is { } clock ? clock.Elapsed.TotalSeconds % 36 : Media.Position + (Media.Playing ? Settings.Offset : 0);
+    /// Playing, or showing the built-in preview.
+    public bool Playing => preview is not null || Media.Playing;
+    System.Diagnostics.Stopwatch? preview;
+    /// `Vers.exe --preview`: plays the demo lyrics with no music, for testing.
+    public void StartPreview() { Import(Demo.Lyrics, "demo.lrc"); preview = System.Diagnostics.Stopwatch.StartNew(); Changed?.Invoke(); }
 
     public (Rgb Lyric, Rgb Highlight, Rgb Secondary) Colors =>
         Settings.AutoColor && AlbumColors is { } a ? a : (Rgb.FromHex(Settings.Lyric), Rgb.FromHex(Settings.Highlight), Rgb.FromHex(Settings.Secondary));
@@ -96,6 +101,7 @@ public sealed class Engine
 
     void OnTrack()
     {
+        if (preview is not null) return;
         UpdateColors();
         if (!Media.HasTrack) { key = ""; SetLyrics(null, "Play a song in Spotify, Apple Music or a browser"); return; }
         var k = Media.TrackKey;

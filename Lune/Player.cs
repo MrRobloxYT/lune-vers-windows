@@ -571,12 +571,14 @@ public sealed class PlayerWindow : Window
         status.Margin = new Thickness(0, 0, 0, 6);
         versPage.Children.Add(status);
 
+        Row("Show lyrics", Toggle(v.Visible, x => v.Visible = x));
         Row("Auto: style for each song", Toggle(v.AutoStyle, x => v.AutoStyle = x), "Picks a style to suit the song");
         versPage.Children.Add(Ui.Label("Style", 12, FontWeights.Medium, 0.6));
         versPage.Children.Add(Choices(Enum.GetValues<LyricStyle>().Select(x => (x, StyleInfo.Name(x))), x => !v.AutoStyle && v.Style == x, x => { v.Style = x; v.AutoStyle = false; }));
         Row("Auto: colors from the album", Toggle(v.AutoColor, x => v.AutoColor = x));
         Row("Black background", Toggle(v.BlackBackground, x => v.BlackBackground = x), "Space pauses while it's showing");
         Row("Only while music plays", Toggle(v.OnlyWhilePlaying, x => v.OnlyWhilePlaying = x));
+        Row("Keep screen awake", Toggle(v.KeepAwake, x => v.KeepAwake = x), "While a song plays");
         Row("Above windows", Toggle(v.AboveWindows, x => v.AboveWindows = x), "Off keeps the lyrics behind your windows");
         var size = new GlassSlider((v.Size - 0.6) / 1.0, 150);
         size.MouseLeftButtonUp += (_, _) => { v.Size = Math.Round(0.6 + size.Value, 2); Save(); };

@@ -19,6 +19,10 @@ public sealed class VersSettings
     public string Highlight { get; set; } = "#FF4D8A";
     public string Secondary { get; set; } = "#9AA0B4";
     public bool OnlyWhilePlaying { get; set; } = true;
+    /// The Mac's "Visibility": show the lyrics at all.
+    public bool Visible { get; set; } = true;
+    /// Keeps the display on while a song plays, as on the Mac.
+    public bool KeepAwake { get; set; } = true;
     // Like the Mac: a black screen while a song with lyrics plays, floating above windows.
     public bool BlackBackground { get; set; } = true;
     public bool AboveWindows { get; set; } = true;
