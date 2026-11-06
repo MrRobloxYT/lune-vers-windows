@@ -42,6 +42,7 @@ public sealed class Shell
         BuildTray();
         Layout();
         Updater.Schedule("Vers", app.Dispatcher, () => { tray?.Dispose(); app.Shutdown(); });
+        Updater.AnnounceIfUpdated("Vers", engine.Settings.LastVersion, v => { engine.Settings.LastVersion = v; engine.Update(); });
         await engine.Media.StartAsync();
     }
 
@@ -157,7 +158,7 @@ public sealed class Shell
         menu.Items.Add(Item("Import Lyrics (.lrc)…", ImportLyrics));
         menu.Items.Add(Item("Start with Windows", () => Startup.Set("Vers", !Startup.IsOn("Vers")), Startup.IsOn("Vers")));
         menu.Items.Add(new Separator());
-        menu.Items.Add(Item($"Version {Updater.Current.ToString(2)} · updates itself", () => { }));
+        menu.Items.Add(Item($"Check for Updates (version {Updater.Current.ToString(2)})", () => _ = Updater.Check("Vers", app.Dispatcher, () => { tray?.Dispose(); app.Shutdown(); }, true)));
         menu.Items.Add(Item("Quit Vers", () => { tray?.Dispose(); app.Shutdown(); }));
     }
 

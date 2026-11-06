@@ -14,6 +14,8 @@ public sealed class GlowAnimator
     public float ColorPhase, WavePhase, Breath, Beat, FlowBoost, Energy;
     public Rgb[] Colors = { new(1, 0.2f, 0.4f) };
     public float[] Weights = { 1 };
+    /// Screen colors stay on the edge they came from: no flow, each edge's share.
+    public float[]? EdgeWeights;
 
     static (float Color, float Wave) Tuning(Motion m) => m switch
     {
@@ -44,6 +46,7 @@ public sealed class GlowAnimator
             float k = 1 - MathF.Exp(-dt / 0.45f);
             for (int i = 0; i < Colors.Length; i++) Colors[i] = Colors[i].Lerp(target[i], k);
         }
+        if (EdgeWeights is { } ew && Colors.Length == 4) { Weights = ew; ColorPhase = 0; return; }
         Weights = Colors.Length switch
         {
             1 => new[] { 1f },
@@ -349,7 +352,14 @@ public sealed class EdgeLight
         var signal = model.Audio.Read();
         bool live = signal.Age < 0.5;
         var mode = s.Motion;
-        anim.Step(dt, mode, live ? signal.Energy : 0, live ? signal.Beat : 0, model.Colors(), first);
+        var colors = model.Colors();
+        if (s.FollowScreen && colors.Count == 4 && screens.Count > 0)
+        {
+            var b = screens[0].Monitor.Bounds; float per = 2f * (b.Width + b.Height);
+            anim.EdgeWeights = new[] { b.Width / per, b.Height / per, b.Width / per, b.Height / per };
+        }
+        else anim.EdgeWeights = null;
+        anim.Step(dt, mode, live ? signal.Energy : 0, live ? signal.Beat : 0, colors, first);
         first = false;
         foreach (var sc in screens)
         {

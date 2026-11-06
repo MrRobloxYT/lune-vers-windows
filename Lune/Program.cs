@@ -52,6 +52,7 @@ public sealed class Shell
         var thread = new Thread(() => { while (signal.WaitOne()) app.Dispatcher.BeginInvoke(ShowPlayer); }) { IsBackground = true };
         thread.Start();
         Updater.Schedule("Lune", app.Dispatcher, () => { tray?.Dispose(); app.Shutdown(); });
+        Updater.AnnounceIfUpdated("Lune", model.Settings.LastVersion, v => { model.Settings.LastVersion = v; model.Update(); });
         await model.Media.StartAsync();
         if (!model.Settings.Welcomed || !args.Contains("--background"))
         {
@@ -101,7 +102,7 @@ public sealed class Shell
         menu.Items.Add(Item("Only While Playing", () => { s.OnlyWhilePlaying = !s.OnlyWhilePlaying; model.Update(); }, s.OnlyWhilePlaying));
         menu.Items.Add(Item("Start with Windows", () => Startup.Set("Lune", !Startup.IsOn("Lune")), Startup.IsOn("Lune")));
         menu.Items.Add(new Separator());
-        menu.Items.Add(Item($"Version {Updater.Current.ToString(2)} · updates itself", () => { }));
+        menu.Items.Add(Item($"Check for Updates (version {Updater.Current.ToString(2)})", () => _ = Updater.Check("Lune", app.Dispatcher, () => { tray?.Dispose(); app.Shutdown(); }, true)));
         menu.Items.Add(Item("Quit Lune", () => { tray?.Dispose(); app.Shutdown(); }));
     }
 }
@@ -129,10 +130,10 @@ public static class Snapshot
                 var model = new Model(app.Dispatcher);
                 var art = DemoArt();
                 var doc = Lrc.Parse(Demo.Lyrics, 120);
-                foreach (var (lyricsView, settings, name) in new[] { (false, false, "player"), (true, false, "player-lyrics"), (false, true, "player-settings") })
+                foreach (var (lyricsView, settings, vers, name) in new[] { (false, false, false, "player"), (true, false, false, "player-lyrics"), (false, true, false, "player-settings"), (false, true, true, "player-settings-vers") })
                 {
                     var window = new PlayerWindow(model);
-                    window.Demo("Neon Rain", "Lune Demo · Spotify", art, doc, 14.2, lyricsView, settings);
+                    window.Demo("Neon Rain", "Lune Demo · Spotify", art, doc, 14.2, lyricsView, settings, vers);
                     var surface = window.Surface;
                     window.Content = null;
                     surface.Measure(new Size(1010, 705));

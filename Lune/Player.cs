@@ -367,40 +367,56 @@ public sealed class PlayerWindow : Window
         }
     }
 
+    StackPanel lunePage = new(), versPage = new();
+    Pill? luneTab, versTab;
+
     Border BuildSettings()
     {
-        var stack = new StackPanel { Width = 400 };
-        var head = new Grid { Margin = new Thickness(0, 0, 0, 10) };
-        head.Children.Add(Ui.Label("Settings", 19, FontWeights.SemiBold));
+        var stack = new StackPanel { Width = 420 };
+        var head = new Grid { Margin = new Thickness(0, 0, 0, 12) };
+        // Tabs: Lune's light, and Vers's desktop lyrics.
+        var tabs = new StackPanel { Orientation = Orientation.Horizontal };
+        luneTab = Pill.Text("Lune", 32, Ui.Glyph.Light, 13);
+        versTab = Pill.Text("Vers", 32, Ui.Glyph.Lyrics, 13);
+        versTab.Margin = new Thickness(8, 0, 0, 0);
+        luneTab.Click += () => ShowTab(false);
+        versTab.Click += () => ShowTab(true);
+        tabs.Children.Add(luneTab); tabs.Children.Add(versTab);
+        head.Children.Add(tabs);
         var close = Pill.Round(Ui.Glyph.Close, 28, 10, 0.06);
         close.HorizontalAlignment = HorizontalAlignment.Right;
         close.Click += () => ShowSettings(false);
         head.Children.Add(close);
         stack.Children.Add(head);
+        stack.Children.Add(lunePage);
+        stack.Children.Add(versPage);
 
+        StackPanel page = lunePage;
         void Row(string label, FrameworkElement control, string? hint = null)
         {
-            var g = new Grid { Margin = new Thickness(0, 7, 0, 7) };
-            var text = new StackPanel { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 150, 0) };
+            var g = new Grid { Margin = new Thickness(0, 6, 0, 6) };
+            var text = new StackPanel { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 170, 0) };
             text.Children.Add(Ui.Label(label, 13.5, FontWeights.Medium, 0.92));
             if (hint is not null) { var h = Ui.Label(hint, 11, null, 0.5); h.TextWrapping = TextWrapping.Wrap; h.TextTrimming = TextTrimming.None; text.Children.Add(h); }
             g.Children.Add(text);
             control.HorizontalAlignment = HorizontalAlignment.Right; control.VerticalAlignment = VerticalAlignment.Center;
             g.Children.Add(control);
-            stack.Children.Add(g);
+            page.Children.Add(g);
         }
-        GlassToggle Toggle(Func<bool> get, Action<bool> set)
+        GlassToggle Toggle(Func<bool> get, Action<bool> set, bool preview = true)
         {
             var t = new GlassToggle(get());
-            t.Changed += v => { set(v); Preview(); model.Update(); };
+            t.Changed += v => { set(v); if (preview) Preview(); model.Update(); };
             refreshers.Add(() => { if (t.On != get()) t.On = get(); t.Accent = model.Accent.Color; });
             return t;
         }
 
+        // Lune
         var s = model.Settings;
         Row("Light", Toggle(() => s.Enabled, v => s.Enabled = v), "Lights the edges of your screen");
         Row("Only while music plays", Toggle(() => s.OnlyWhilePlaying, v => s.OnlyWhilePlaying = v), "Fades out when you pause");
-        Row("Colors from the album", Toggle(() => !s.OverrideAlbum, v => s.OverrideAlbum = !v), "Off uses your own colors below");
+        Row("Auto: colors from the album", Toggle(() => !s.OverrideAlbum, v => s.OverrideAlbum = !v), "Off uses your own colors below");
+        Row("Auto: follow screen colors", Toggle(() => s.FollowScreen, v => s.FollowScreen = v), "Each edge takes the color of what's on screen");
 
         string[] swatches = { "#FF1A4D", "#FF6A1A", "#FFC21A", "#26D95C", "#1AD9C8", "#1A6BFF", "#7A3DFF", "#E040FB", "#FFFFFF" };
         void Swatches(string label, Func<string> get, Action<string> set)
@@ -410,7 +426,7 @@ public sealed class PlayerWindow : Window
             {
                 var color = (Color)ColorConverter.ConvertFromString(hex);
                 var dot = new Border { Width = 18, Height = 18, CornerRadius = new CornerRadius(9), Background = new SolidColorBrush(color), Margin = new Thickness(3, 0, 0, 0), BorderThickness = new Thickness(2), Cursor = Cursors.Hand };
-                dot.MouseLeftButtonUp += (_, e) => { set(hex); s.OverrideAlbum = true; Preview(); model.Update(); e.Handled = true; };
+                dot.MouseLeftButtonUp += (_, e) => { set(hex); s.OverrideAlbum = true; s.FollowScreen = false; Preview(); model.Update(); e.Handled = true; };
                 refreshers.Add(() => dot.BorderBrush = string.Equals(get(), hex, StringComparison.OrdinalIgnoreCase) ? Brushes.White : Brushes.Transparent);
                 row.Children.Add(dot);
             }
@@ -420,19 +436,28 @@ public sealed class PlayerWindow : Window
         Swatches("Secondary", () => s.Secondary, v => s.Secondary = v);
         Swatches("Tertiary", () => s.Tertiary, v => s.Tertiary = v);
 
-        var thickness = new GlassSlider(s.Thickness, 140);
+        var thickness = new GlassSlider(s.Thickness, 150);
         thickness.Changed += v => { s.Thickness = v; Preview(); model.Update(); };
         refreshers.Add(() => thickness.Value = s.Thickness);
         Row("Thickness", thickness);
-        var glowSlider = new GlassSlider(s.Glow, 140);
+        var glowSlider = new GlassSlider(s.Glow, 150);
         glowSlider.Changed += v => { s.Glow = v; Preview(); model.Update(); };
         refreshers.Add(() => glowSlider.Value = s.Glow);
         Row("Glow", glowSlider);
-        Row("Start with Windows", Toggle(() => Startup.IsOn("Lune"), v => Startup.Set("Lune", v)));
+        Row("Start with Windows", Toggle(() => Startup.IsOn("Lune"), v => Startup.Set("Lune", v), false));
 
-        var footer = Ui.Label($"Lune {LuneVers.Updater.Current.ToString(2)} for Windows · Made by Rizwan · updates itself", 11, null, 0.45);
-        footer.Margin = new Thickness(0, 12, 0, 0);
+        page = versPage;
+        FillVers();
+
+        // Footer: version and updates.
+        var footer = new Grid { Margin = new Thickness(0, 12, 0, 0) };
+        footer.Children.Add(new TextBlock { Text = $"Lune {LuneVers.Updater.Current.ToString(2)} for Windows · Made by Rizwan", FontSize = 11, FontFamily = Ui.Text, Foreground = Ui.Fill(0.45), VerticalAlignment = VerticalAlignment.Center });
+        var update = Pill.Text("Check for updates", 28, Ui.Glyph.Refresh, 11.5);
+        update.HorizontalAlignment = HorizontalAlignment.Right;
+        update.Click += () => _ = LuneVers.Updater.Check("Lune", Dispatcher, () => Application.Current.Shutdown(), true);
+        footer.Children.Add(update);
         stack.Children.Add(footer);
+        ShowTab(false);
 
         var card = Ui.Glass(stack, 24, 0.09, 22);
         card.HorizontalAlignment = HorizontalAlignment.Center; card.VerticalAlignment = VerticalAlignment.Bottom;
@@ -441,6 +466,75 @@ public sealed class PlayerWindow : Window
         card.RenderTransform = new ScaleTransform(0.95, 0.95);
         card.MouseLeftButtonDown += (_, e) => e.Handled = true;
         return card;
+    }
+
+    void ShowTab(bool vers)
+    {
+        if (vers) FillVers();
+        lunePage.Visibility = vers ? Visibility.Collapsed : Visibility.Visible;
+        versPage.Visibility = vers ? Visibility.Visible : Visibility.Collapsed;
+        if (luneTab is not null) luneTab.Tint = vers ? null : model.Accent.Color;
+        if (versTab is not null) versTab.Tint = vers ? model.Accent.Color : null;
+    }
+
+    /// Vers's settings, read from its settings file; Vers picks up changes at once.
+    void FillVers()
+    {
+        versPage.Children.Clear();
+        var v = VersLink.Load();
+        void Save() { VersLink.Save(v); Dispatcher.BeginInvoke(FillVers); }
+        void Row(string label, FrameworkElement control, string? hint = null)
+        {
+            var g = new Grid { Margin = new Thickness(0, 6, 0, 6) };
+            var text = new StackPanel { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 170, 0) };
+            text.Children.Add(Ui.Label(label, 13.5, FontWeights.Medium, 0.92));
+            if (hint is not null) { var h = Ui.Label(hint, 11, null, 0.5); h.TextWrapping = TextWrapping.Wrap; h.TextTrimming = TextTrimming.None; text.Children.Add(h); }
+            g.Children.Add(text);
+            control.HorizontalAlignment = HorizontalAlignment.Right; control.VerticalAlignment = VerticalAlignment.Center;
+            g.Children.Add(control);
+            versPage.Children.Add(g);
+        }
+        GlassToggle Toggle(bool on, Action<bool> set) { var t = new GlassToggle(on) { Accent = model.Accent.Color }; t.Changed += x => { set(x); Save(); }; return t; }
+        WrapPanel Choices<T>(IEnumerable<(T Value, string Name)> items, Func<T, bool> selected, Action<T> pick)
+        {
+            var wrap = new WrapPanel { Margin = new Thickness(0, 2, 0, 6) };
+            foreach (var (value, name) in items)
+            {
+                var p = Pill.Text(name, 28, null, 11.5);
+                p.Margin = new Thickness(0, 0, 6, 6);
+                if (selected(value)) p.Tint = model.Accent.Color;
+                p.Click += () => { pick(value); Save(); };
+                wrap.Children.Add(p);
+            }
+            return wrap;
+        }
+
+        bool running = VersLink.Running();
+        var status = Ui.Label(running ? (VersLink.AutoPick() is { } pick && v.AutoStyle ? $"Vers is running · Auto picked {pick} for this song" : "Vers is running · changes apply right away")
+            : "Vers isn't running. Changes apply when you open it.", 11.5, null, running ? 0.6 : 0.5);
+        status.Margin = new Thickness(0, 0, 0, 6);
+        versPage.Children.Add(status);
+
+        Row("Auto: style for each song", Toggle(v.AutoStyle, x => v.AutoStyle = x), "Fast lyrics get punchy styles, slow songs airy ones");
+        versPage.Children.Add(Ui.Label("Style", 12, FontWeights.Medium, 0.6));
+        versPage.Children.Add(Choices(Enum.GetValues<LyricStyle>().Select(x => (x, StyleInfo.Name(x))), x => !v.AutoStyle && v.Style == x, x => { v.Style = x; v.AutoStyle = false; }));
+        Row("Auto: colors from the album", Toggle(v.AutoColor, x => v.AutoColor = x));
+        Row("Black background", Toggle(v.BlackBackground, x => v.BlackBackground = x), "Space pauses while it's showing");
+        Row("Only while music plays", Toggle(v.OnlyWhilePlaying, x => v.OnlyWhilePlaying = x));
+        Row("Above windows", Toggle(v.AboveWindows, x => v.AboveWindows = x));
+        var size = new GlassSlider((v.Size - 0.6) / 1.0, 150);
+        size.MouseLeftButtonUp += (_, _) => { v.Size = Math.Round(0.6 + size.Value, 2); Save(); };
+        Row("Text size", size);
+        var timing = new StackPanel { Orientation = Orientation.Horizontal };
+        var later = Pill.Round(Ui.Glyph.Remove, 26, 10); var earlier = Pill.Round(Ui.Glyph.Add, 26, 10);
+        var label = Ui.Label(v.Offset == 0 ? "In sync" : $"{v.Offset:+0.0;-0.0}s", 11.5, FontWeights.SemiBold, 0.7);
+        label.Width = 60; label.TextAlignment = TextAlignment.Center; label.VerticalAlignment = VerticalAlignment.Center;
+        later.Click += () => { v.Offset = Math.Clamp(Math.Round(v.Offset - 0.1, 1), -5, 5); Save(); };
+        earlier.Click += () => { v.Offset = Math.Clamp(Math.Round(v.Offset + 0.1, 1), -5, 5); Save(); };
+        timing.Children.Add(later); timing.Children.Add(label); timing.Children.Add(earlier);
+        Row("Timing", timing, "− shows lyrics later, + earlier");
+        versPage.Children.Add(Ui.Label("Font", 12, FontWeights.Medium, 0.6));
+        versPage.Children.Add(Choices(VersSettings.Fonts.Select(f => (f, f.Replace(" Variable Display", ""))), f => v.Font == f, f => v.Font = f));
     }
 
     DateTime previewUntil;
@@ -582,8 +676,9 @@ public sealed class PlayerWindow : Window
     // MARK: Previews for tests and the website
 
     public FrameworkElement Surface => outer;
-    public void Demo(string song, string by, BitmapSource? art, LyricDocument doc, double time, bool lyricsView, bool settings)
+    public void Demo(string song, string by, BitmapSource? art, LyricDocument doc, double time, bool lyricsView, bool settings, bool versTab = false)
     {
+        ShowTab(versTab);
         fallbackBackground.Visibility = Visibility.Visible;
         title.Text = smallTitle.Text = song;
         artist.Text = smallArtist.Text = by;

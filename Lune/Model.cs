@@ -15,6 +15,7 @@ public sealed class LuneSettings
     public double Thickness { get; set; } = 0.45;   // 0…1, hairline to broad band
     public double Glow { get; set; } = 0.7;         // 0…1, whisper to room wash
     public bool OverrideAlbum { get; set; }
+    public bool FollowScreen { get; set; }
     public string Primary { get; set; } = "#FF1A4D";
     public string Secondary { get; set; } = "#1A6BFF";
     public string Tertiary { get; set; } = "#26D95C";
@@ -23,6 +24,7 @@ public sealed class LuneSettings
     public bool KeepPlayerOnTop { get; set; }
     public double LyricsOffset { get; set; }
     public bool Welcomed { get; set; }
+    public string LastVersion { get; set; } = "";
 
     public float ThicknessPoints => (float)(1.0 + Thickness * 17.0);
     public float GlowPoints => (float)(Glow * Glow * 110.0);
@@ -34,6 +36,7 @@ public sealed class Model
     public LuneSettings Settings { get; }
     public MediaWatcher Media { get; }
     public AudioLevel Audio { get; } = new();
+    public ScreenColors Screen { get; } = new();
     public List<Rgb>? AlbumPalette { get; private set; }
     public BitmapSource? Artwork { get; private set; }
     /// Shows the light while settings are being changed, even when paused.
@@ -65,6 +68,7 @@ public sealed class Model
     {
         // Music Sync and the player's pulse listen to what the PC is playing.
         Audio.Start();
+        Screen.Run(Settings.FollowScreen, () => GlowRenderer.Reach(Settings));
     }
 
     void OnTrack()
@@ -96,6 +100,8 @@ public sealed class Model
     public List<Rgb> Colors()
     {
         var s = Settings;
+        // Follow screen colors: one color per edge, taken from the screen.
+        if (s.FollowScreen && Screen.Colors is { Count: 4 } edges) return edges;
         int n = Math.Clamp(s.ColorCount, 1, 3);
         if (!s.OverrideAlbum && AlbumPalette is { Count: > 0 } album) return album.Take(Math.Min(n, album.Count)).ToList();
         return new[] { Rgb.FromHex(s.Primary), Rgb.FromHex(s.Secondary), Rgb.FromHex(s.Tertiary) }.Take(n).ToList();
