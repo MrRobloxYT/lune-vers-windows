@@ -24,7 +24,7 @@ public sealed class VersSettings
     /// Keeps the display on while a song plays, as on the Mac.
     public bool KeepAwake { get; set; } = true;
     // Like the Mac: a black screen while a song with lyrics plays, floating above windows.
-    public bool BlackBackground { get; set; } = true;
+    public bool BlackBackground { get; set; } = false;   // off on Windows; turn on from the tray menu
     public bool AboveWindows { get; set; } = true;
     public int Version { get; set; }
     public string LastVersion { get; set; } = "";

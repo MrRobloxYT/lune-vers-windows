@@ -12,7 +12,7 @@
     <ApplicationIcon>app.ico</ApplicationIcon>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <StartupObject>Vers.Program</StartupObject>
-    <Version>1.6.0</Version>
+    <Version>1.7.0</Version>
     <Product>Vers</Product>
     <Company>Rizwan</Company>
     <EnableWindowsTargeting>true</EnableWindowsTargeting>

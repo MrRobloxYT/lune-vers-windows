@@ -28,6 +28,12 @@ public sealed class Engine
             Settings.BlackBackground = true; Settings.AboveWindows = true; Settings.Font = "Inter"; Settings.Version = 2;
             Store.Save("Vers", Settings);
         }
+        if (Settings.Version < 3)
+        {
+            // 1.7: the black screen starts off on Windows. It can still be turned on in the tray menu.
+            Settings.BlackBackground = false; Settings.Version = 3;
+            Store.Save("Vers", Settings);
+        }
         Media = new MediaWatcher(ui);
         Media.TrackChanged += OnTrack;
         Media.StateChanged += () => Changed?.Invoke();
