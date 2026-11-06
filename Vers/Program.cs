@@ -131,7 +131,7 @@ public sealed class Shell
         var font = new MenuItem { Header = "Font" };
         foreach (var f in VersSettings.Fonts)
         {
-            var i = Item(LuneVers.Fonts.Label(f), () => { s.Font = f; engine.Update(); }, s.Font == f);
+            var i = Item(LuneVers.Fonts.Label(f), () => { s.Font = f; engine.Update(); }, s.Font == f, LuneVers.Fonts.Detail(f));
             i.FontFamily = LuneVers.Fonts.Family(f);
             font.Items.Add(i);
         }

@@ -590,14 +590,14 @@ public sealed class PlayerWindow : Window
         timing.Children.Add(later); timing.Children.Add(label); timing.Children.Add(earlier);
         Row("Timing", timing, "− shows lyrics later, + earlier");
         versPage.Children.Add(Ui.Label("Font", 12, FontWeights.Medium, 0.6));
-        var fonts = Choices(VersSettings.Fonts.Select(f => (f, f.Replace(" Variable Display", ""))), f => v.Font == f, f => v.Font = f);
+        var fonts = Choices(VersSettings.Fonts.Select(f => (f, LuneVers.Fonts.Label(f))), f => v.Font == f, f => v.Font = f);
         for (int i = 0; i < fonts.Children.Count; i++)
         {
             var name = VersSettings.Fonts[i];
             if (fonts.Children[i] is Pill { Child: StackPanel row } pill)
             {
                 foreach (var t in row.Children.OfType<TextBlock>()) t.FontFamily = LuneVers.Fonts.Family(name);
-                pill.ToolTip = LuneVers.Fonts.Label(name);
+                pill.ToolTip = LuneVers.Fonts.Detail(name);
             }
         }
         versPage.Children.Add(fonts);
