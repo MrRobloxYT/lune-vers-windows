@@ -86,10 +86,12 @@ public sealed class Shell
         windows.Clear();
         foreach (var m in chosen)
         {
-            var w = new OverlayWindow(engine, s.BlackBackground);
+            // Always a see-through window that paints its own black. The faster
+            // opaque window turned some graphics cards' screens fully black.
+            var w = new OverlayWindow(engine, false);
             w.Place(m);
-            // The black window shows itself only while the black is on.
-            if (!s.BlackBackground) { w.Show(); w.Reposition(); }
+            w.Show();
+            w.Reposition();
             windows.Add(w);
         }
     }
