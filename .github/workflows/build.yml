@@ -1,0 +1,43 @@
+name: Build
+on:
+  push:
+  workflow_dispatch:
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+      - name: Tests
+        run: dotnet run --project Tests/Tests.csproj -c Release
+      - name: Publish
+        run: |
+          dotnet publish Lune/Lune.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true -o publish/Lune
+          dotnet publish Vers/Vers.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true -o publish/Vers
+      - name: Snapshots
+        shell: pwsh
+        run: |
+          $p = Start-Process publish/Lune/Lune.exe -ArgumentList "--snapshot","snapshots" -Wait -PassThru -NoNewWindow
+          if ($p.ExitCode -ne 0) { throw "Lune snapshot failed" }
+          $p = Start-Process publish/Vers/Vers.exe -ArgumentList "--snapshot","snapshots" -Wait -PassThru -NoNewWindow
+          if ($p.ExitCode -ne 0) { throw "Vers snapshot failed" }
+          Get-ChildItem snapshots
+      - name: Installers
+        shell: pwsh
+        run: |
+          if (-not (Get-Command iscc -ErrorAction SilentlyContinue)) { choco install innosetup -y --no-progress | Out-Null }
+          $iscc = (Get-Command iscc -ErrorAction SilentlyContinue).Source
+          if (-not $iscc) { $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" }
+          & $iscc installer/Lune.iss
+          & $iscc installer/Vers.iss
+          Get-ChildItem out
+      - uses: actions/upload-artifact@v4
+        with:
+          name: snapshots
+          path: snapshots
+      - uses: actions/upload-artifact@v4
+        with:
+          name: installers
+          path: out
