@@ -179,13 +179,25 @@ public sealed class PlayerWindow : Window
         var row = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, plain ? 14 : 24, 0, 0) };
         void Add(Pill p, Action act, string tip, double gap) { p.Click += act; p.ToolTip = tip; p.Margin = new Thickness(gap, 0, gap, 0); p.VerticalAlignment = VerticalAlignment.Center; row.Children.Add(p); }
         double fill = plain ? 0.0 : 0.08;
-        Add(Pill.Round(Ui.Glyph.Back, plain ? 30 : 36, plain ? 12 : 14, fill), () => model.Media.Seek(model.Media.Position - 15), "Back 15 seconds", 5);
+        Add(Skip(false, plain ? 30 : 36, fill), () => model.Media.Seek(model.Media.Position - 15), "Back 15 seconds", 5);
         Add(Pill.Round(Ui.Glyph.Previous, plain ? 34 : 44, plain ? 13 : 16, fill), model.Media.Previous, "Previous", 5);
         var play = new Pill(plain ? smallPlayGlyph : playGlyph, plain ? 42 : 58, plain ? 42 : 58, true, plain ? 0.1 : 0.14);
         Add(play, model.Media.PlayPause, "Play or pause (Space)", 5);
         Add(Pill.Round(Ui.Glyph.Next, plain ? 34 : 44, plain ? 13 : 16, fill), model.Media.Next, "Next", 5);
-        Add(Pill.Round(Ui.Glyph.Forward, plain ? 30 : 36, plain ? 12 : 14, fill), () => model.Media.Seek(model.Media.Position + 15), "Forward 15 seconds", 5);
+        Add(Skip(true, plain ? 30 : 36, fill), () => model.Media.Seek(model.Media.Position + 15), "Forward 15 seconds", 5);
         return row;
+    }
+
+    /// A circular arrow with "15" inside, like the Mac's skip buttons.
+    static Pill Skip(bool forward, double size, double fill)
+    {
+        var g = new Grid();
+        var arrow = Ui.Icon(Ui.Glyph.Refresh, size * 0.5);
+        if (!forward) { arrow.RenderTransformOrigin = new Point(0.5, 0.5); arrow.RenderTransform = new ScaleTransform(-1, 1); }
+        g.Children.Add(arrow);
+        g.Children.Add(new TextBlock { Text = "15", FontSize = size * 0.21, FontWeight = FontWeights.Bold, FontFamily = Ui.Text, Foreground = Brushes.White,
+            HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 1, 0, 0) });
+        return new Pill(g, size, size, true, fill);
     }
 
     Border BuildLyricsCard()
@@ -577,6 +589,5 @@ public sealed class PlayerWindow : Window
         main.Visibility = lyricsView || settings ? Visibility.Collapsed : Visibility.Visible; main.Opacity = 1;
         lyricsCard.Visibility = lyricsView ? Visibility.Visible : Visibility.Collapsed; lyricsCard.Opacity = 1; lyricsCard.RenderTransform = new ScaleTransform(1, 1);
         settingsPanel.Visibility = settings ? Visibility.Visible : Visibility.Collapsed; settingsPanel.Opacity = 1; settingsPanel.RenderTransform = new ScaleTransform(1, 1);
-        if (!lyricsView && !settings) Open("motion");
     }
 }
