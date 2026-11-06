@@ -1,0 +1,28 @@
+name: release
+on:
+  workflow_dispatch:
+    inputs:
+      run_id: { description: "Build run to publish", required: true }
+      tag: { description: "Release tag, e.g. windows-1.4", required: true }
+permissions:
+  contents: write
+  actions: read
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: installers
+          run-id: ${{ inputs.run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: out
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          cd out
+          find . -name '*-Setup.exe' -exec mv {} . \; 2>/dev/null || true
+          ls -la
+          sha256sum Lune-Setup.exe Vers-Setup.exe
+          gh release create "${{ inputs.tag }}" Lune-Setup.exe Vers-Setup.exe --repo "$GITHUB_REPOSITORY" --latest --title "Lune & Vers ${{ inputs.tag }}" --notes "Lune and Vers for Windows. Installed copies update themselves."
