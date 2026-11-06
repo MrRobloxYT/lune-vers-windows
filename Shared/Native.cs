@@ -24,6 +24,14 @@ public static class Native
         SetWindowLongPtr(hwnd, GWL_EXSTYLE, new IntPtr(style));
     }
 
+    /// Turns click-through on or off (off lets the window take clicks and keys).
+    public static void SetClickThrough(IntPtr hwnd, bool on)
+    {
+        long style = GetWindowLongPtr(hwnd, GWL_EXSTYLE).ToInt64();
+        style = on ? style | WS_EX_TRANSPARENT | WS_EX_NOACTIVATE : style & ~(long)(WS_EX_TRANSPARENT | WS_EX_NOACTIVATE);
+        SetWindowLongPtr(hwnd, GWL_EXSTYLE, new IntPtr(style));
+    }
+
     [StructLayout(LayoutKind.Sequential)]
     public struct RECT { public int Left, Top, Right, Bottom; public int Width => Right - Left; public int Height => Bottom - Top; }
 

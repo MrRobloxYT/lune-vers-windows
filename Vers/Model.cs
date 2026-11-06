@@ -11,7 +11,7 @@ public sealed class VersSettings
 {
     public bool AutoStyle { get; set; } = true;
     public LyricStyle Style { get; set; } = LyricStyle.Ship;
-    public string Font { get; set; } = "Segoe UI Variable Display";
+    public string Font { get; set; } = "Inter";
     public double Size { get; set; } = 1;
     public string Display { get; set; } = "main";
     public bool AutoColor { get; set; } = true;
@@ -19,11 +19,13 @@ public sealed class VersSettings
     public string Highlight { get; set; } = "#FF4D8A";
     public string Secondary { get; set; } = "#9AA0B4";
     public bool OnlyWhilePlaying { get; set; } = true;
-    public bool BlackBackground { get; set; }
-    public bool AboveWindows { get; set; }
+    // Like the Mac: a black screen while a song with lyrics plays, floating above windows.
+    public bool BlackBackground { get; set; } = true;
+    public bool AboveWindows { get; set; } = true;
+    public int Version { get; set; }
     public double Offset { get; set; }    // seconds; positive shows lyrics earlier
 
-    public static readonly string[] Fonts = { "Segoe UI Variable Display", "Georgia", "Cascadia Code", "Bahnschrift" };
+    public static readonly string[] Fonts = { "Inter", "Segoe UI Variable Display", "Georgia", "Bahnschrift", "Cascadia Code" };
 }
 
 public static class StyleInfo
@@ -85,6 +87,12 @@ public sealed class Engine
     public Engine(Dispatcher ui)
     {
         Settings = Store.Load<VersSettings>("Vers");
+        if (Settings.Version < 2)
+        {
+            // 1.0 kept the lyrics behind windows with no black screen; match the Mac.
+            Settings.BlackBackground = true; Settings.AboveWindows = true; Settings.Font = "Inter"; Settings.Version = 2;
+            Store.Save("Vers", Settings);
+        }
         Media = new MediaWatcher(ui);
         Media.TrackChanged += OnTrack;
         Media.StateChanged += () => Changed?.Invoke();

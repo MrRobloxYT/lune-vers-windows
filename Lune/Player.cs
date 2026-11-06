@@ -70,6 +70,10 @@ public sealed class PlayerWindow : Window
         Background = Brushes.Transparent;
         Foreground = Brushes.White;
         FontFamily = Ui.Text;
+        // Grayscale text: ClearType draws colored fringes on glass.
+        TextOptions.SetTextRenderingMode(this, TextRenderingMode.Grayscale);
+        TextOptions.SetTextFormattingMode(this, TextFormattingMode.Ideal);
+        UseLayoutRounding = true;
         try { Icon = BitmapFrame.Create(new Uri("pack://application:,,,/Lune;component/app.ico")); } catch { }
         WindowChrome.SetWindowChrome(this, new WindowChrome
         {
@@ -426,7 +430,7 @@ public sealed class PlayerWindow : Window
         Row("Glow", glowSlider);
         Row("Start with Windows", Toggle(() => Startup.IsOn("Lune"), v => Startup.Set("Lune", v)));
 
-        var footer = Ui.Label("Lune 1.0 for Windows · Made by Rizwan", 11, null, 0.45);
+        var footer = Ui.Label($"Lune {LuneVers.Updater.Current.ToString(2)} for Windows · Made by Rizwan · updates itself", 11, null, 0.45);
         footer.Margin = new Thickness(0, 12, 0, 0);
         stack.Children.Add(footer);
 

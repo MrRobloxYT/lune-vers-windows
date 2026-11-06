@@ -12,7 +12,11 @@ public sealed class LyricsCanvas : FrameworkElement
 {
     readonly Engine engine;
     readonly System.Diagnostics.Stopwatch clock = System.Diagnostics.Stopwatch.StartNew();
-    double presence, lastFrame;
+    double presence, lastFrame, dark;
+    /// 0…1: how far the black background has faded in.
+    public double Dark => FixedPresence >= 0 ? (engine.Settings.BlackBackground ? 1 : 0) : dark;
+    public event Action<bool>? DarkChanged;
+    bool wasDark;
     public double? FixedTime { get; set; }       // for snapshots
     public double FixedPresence { get; set; } = -1;
 
@@ -20,6 +24,8 @@ public sealed class LyricsCanvas : FrameworkElement
     {
         this.engine = engine;
         IsHitTestVisible = false;
+        TextOptions.SetTextRenderingMode(this, TextRenderingMode.Grayscale);
+        TextOptions.SetTextHintingMode(this, TextHintingMode.Animated);
         CompositionTarget.Rendering += OnFrame;
     }
 
@@ -36,12 +42,19 @@ public sealed class LyricsCanvas : FrameworkElement
         double target = (!s.OnlyWhilePlaying || engine.Media.Playing) ? 1 : 0;
         presence += (target - presence) * (1 - Math.Exp(-dt / (target > presence ? 0.25 : 0.6)));
         if (Math.Abs(target - presence) < 0.002) presence = target;
+        // Black background fades in while a song with lyrics is playing, as on the Mac.
+        double wantDark = s.BlackBackground && engine.Media.Playing && engine.Lyrics is { Words.Count: > 0 } ? 1 : 0;
+        dark += (wantDark - dark) * (1 - Math.Exp(-dt / 0.35));
+        if (Math.Abs(wantDark - dark) < 0.002) dark = wantDark;
+        bool isDark = dark >= 0.5;
+        if (isDark != wasDark) { wasDark = isDark; DarkChanged?.Invoke(isDark); }
         InvalidateVisual();
     }
 
     bool Busy()
     {
         var doc = engine.Lyrics;
+        if (dark is > 0 and < 1) return true;
         if (doc is null || presence is > 0 and < 1) return presence is > 0 and < 1;
         double t = engine.Time;
         int i = Lrc.LastStarted(doc.Words, t);
@@ -49,7 +62,7 @@ public sealed class LyricsCanvas : FrameworkElement
     }
 
     double Base => 56 * engine.Settings.Size * Math.Min(1.4, Math.Max(0.7, ActualHeight / 700));
-    Typeface Face(FontWeight weight) => new(new FontFamily(engine.Settings.Font + ", Segoe UI"), FontStyles.Normal, weight, FontStretches.Normal);
+    Typeface Face(FontWeight weight) => new(LuneVers.Fonts.Family(engine.Settings.Font), FontStyles.Normal, weight, FontStretches.Normal);
     static readonly Typeface Mono = new(new FontFamily("Cascadia Code, Consolas"), FontStyles.Normal, FontWeights.Normal, FontStretches.Normal);
 
     FormattedText Text(string text, double size, Brush brush, Typeface face) =>
@@ -66,7 +79,7 @@ public sealed class LyricsCanvas : FrameworkElement
         double w = ActualWidth, h = ActualHeight;
         var s = engine.Settings;
         double fade = FixedPresence >= 0 ? FixedPresence : presence;
-        if (s.BlackBackground) dc.DrawRectangle(Paint(new Rgb(0, 0, 0), fade), null, new Rect(0, 0, w, h));
+        if (Dark > 0.001) dc.DrawRectangle(Paint(new Rgb(0, 0, 0), Dark), null, new Rect(0, 0, w, h));
         var doc = engine.Lyrics;
         if (doc is null || doc.Words.Count == 0 || fade <= 0.001) return;
         double t = FixedTime ?? engine.Time;
@@ -435,27 +448,39 @@ public sealed class OverlayWindow : Window
         ShowActivated = false;
         ResizeMode = ResizeMode.NoResize;
         Title = "Vers lyrics";
+        Topmost = engine.Settings.AboveWindows;
         Canvas = new LyricsCanvas(engine);
         Content = Canvas;
         SourceInitialized += (_, _) => { hwnd = new WindowInteropHelper(this).Handle; Native.MakeClickThrough(hwnd); };
+        // While the screen is black it takes clicks and keys, so nothing hidden
+        // gets clicked and Space pauses the song (handy with one monitor).
+        Canvas.DarkChanged += dark =>
+        {
+            if (hwnd == IntPtr.Zero) return;
+            Native.SetClickThrough(hwnd, !dark);
+            Canvas.IsHitTestVisible = dark;
+            if (dark) { Activate(); Focus(); }
+        };
+        Background = new SolidColorBrush(Color.FromArgb(1, 0, 0, 0));
+        MouseLeftButtonDown += (_, _) => { if (Canvas.Dark >= 0.5) { Activate(); Focus(); } };
+        KeyDown += (_, e) =>
+        {
+            if (Canvas.Dark < 0.5) return;
+            if (e.Key == System.Windows.Input.Key.Space || e.Key == System.Windows.Input.Key.MediaPlayPause) { engine.Media.PlayPause(); e.Handled = true; }
+            else if (e.Key == System.Windows.Input.Key.Right) engine.Media.Next();
+            else if (e.Key == System.Windows.Input.Key.Left) engine.Media.Previous();
+        };
         layer = new System.Windows.Threading.DispatcherTimer(TimeSpan.FromSeconds(1), System.Windows.Threading.DispatcherPriority.Background, (_, _) => KeepLayer(), Dispatcher);
         layer.Start();
     }
 
-    /// Covers the middle of the screen (or all of it with a black background).
+    /// Covers the whole screen, like the Mac.
     public void Place(Native.Monitor m)
     {
         monitor = m;
         if (hwnd == IntPtr.Zero) hwnd = new WindowInteropHelper(this).EnsureHandle();
-        var area = engine.Settings.BlackBackground ? m.Bounds : m.Work;
-        int w = area.Width, h = area.Height;
-        int x = area.Left, y = area.Top;
-        if (!engine.Settings.BlackBackground)
-        {
-            int iw = (int)(w * 0.8), ih = (int)(h * 0.7);
-            x += (w - iw) / 2; y += (h - ih) / 2; w = iw; h = ih;
-        }
-        for (int i = 0; i < 2; i++) Native.SetWindowPos(hwnd, IntPtr.Zero, x, y, w, h, Native.SWP_NOZORDER | Native.SWP_NOACTIVATE);
+        var area = m.Bounds;
+        for (int i = 0; i < 2; i++) Native.SetWindowPos(hwnd, IntPtr.Zero, area.Left, area.Top, area.Width, area.Height, Native.SWP_NOZORDER | Native.SWP_NOACTIVATE);
         KeepLayer();
     }
 

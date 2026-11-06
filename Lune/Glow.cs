@@ -358,7 +358,7 @@ public sealed class EdgeLight
             foreach (var w in sc.Strips) w.Draw(frame);
         }
         // Other always-on-top windows (the taskbar) can cover the light; take it back.
-        if (now - lastTop > 2) { lastTop = now; foreach (var sc in screens) foreach (var w in sc.Strips) w.KeepOnTop(); }
+        if (now - lastTop > 0.5) { lastTop = now; foreach (var sc in screens) foreach (var w in sc.Strips) w.KeepOnTop(); }
     }
 
     /// A still frame of the whole screen, for previews and tests.

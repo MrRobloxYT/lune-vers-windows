@@ -79,6 +79,8 @@ public sealed class LyricLinesView : FrameworkElement
     {
         this.lyrics = lyrics;
         ClipToBounds = true;
+        TextOptions.SetTextRenderingMode(this, TextRenderingMode.Grayscale);
+        TextOptions.SetTextHintingMode(this, TextHintingMode.Animated);
         var mask = new LinearGradientBrush { StartPoint = new Point(0, 0), EndPoint = new Point(0, 1) };
         mask.GradientStops.Add(new GradientStop(Colors.Transparent, 0));
         mask.GradientStops.Add(new GradientStop(Colors.Black, 0.22));

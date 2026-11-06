@@ -41,6 +41,7 @@ public sealed class Shell
         Microsoft.Win32.SystemEvents.DisplaySettingsChanged += (_, _) => app.Dispatcher.BeginInvoke(() => { layoutKey = ""; Layout(); });
         BuildTray();
         Layout();
+        Updater.Schedule("Vers", app.Dispatcher, () => { tray?.Dispose(); app.Shutdown(); });
         await engine.Media.StartAsync();
     }
 
@@ -104,7 +105,7 @@ public sealed class Shell
         foreach (var f in VersSettings.Fonts)
         {
             var i = Item(f, () => { s.Font = f; engine.Update(); }, s.Font == f);
-            i.FontFamily = new FontFamily(f);
+            i.FontFamily = LuneVers.Fonts.Family(f);
             font.Items.Add(i);
         }
         menu.Items.Add(font);
@@ -156,6 +157,7 @@ public sealed class Shell
         menu.Items.Add(Item("Import Lyrics (.lrc)…", ImportLyrics));
         menu.Items.Add(Item("Start with Windows", () => Startup.Set("Vers", !Startup.IsOn("Vers")), Startup.IsOn("Vers")));
         menu.Items.Add(new Separator());
+        menu.Items.Add(Item($"Version {Updater.Current.ToString(2)} · updates itself", () => { }));
         menu.Items.Add(Item("Quit Vers", () => { tray?.Dispose(); app.Shutdown(); }));
     }
 

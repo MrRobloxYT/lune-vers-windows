@@ -10,7 +10,7 @@ namespace Lune;
 public static class Ui
 {
     public static readonly FontFamily Icons = new("Segoe Fluent Icons, Segoe MDL2 Assets");
-    public static readonly FontFamily Text = new("Segoe UI Variable Display, Segoe UI");
+    public static readonly FontFamily Text = LuneVers.Fonts.Inter;
 
     public static class Glyph
     {

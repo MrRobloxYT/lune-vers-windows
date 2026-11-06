@@ -51,6 +51,7 @@ public sealed class Shell
         var signal = new EventWaitHandle(false, EventResetMode.AutoReset, signalName);
         var thread = new Thread(() => { while (signal.WaitOne()) app.Dispatcher.BeginInvoke(ShowPlayer); }) { IsBackground = true };
         thread.Start();
+        Updater.Schedule("Lune", app.Dispatcher, () => { tray?.Dispose(); app.Shutdown(); });
         await model.Media.StartAsync();
         if (!model.Settings.Welcomed || !args.Contains("--background"))
         {
@@ -100,6 +101,7 @@ public sealed class Shell
         menu.Items.Add(Item("Only While Playing", () => { s.OnlyWhilePlaying = !s.OnlyWhilePlaying; model.Update(); }, s.OnlyWhilePlaying));
         menu.Items.Add(Item("Start with Windows", () => Startup.Set("Lune", !Startup.IsOn("Lune")), Startup.IsOn("Lune")));
         menu.Items.Add(new Separator());
+        menu.Items.Add(Item($"Version {Updater.Current.ToString(2)} · updates itself", () => { }));
         menu.Items.Add(Item("Quit Lune", () => { tray?.Dispose(); app.Shutdown(); }));
     }
 }

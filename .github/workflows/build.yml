@@ -10,6 +10,20 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: 8.0.x
+      - name: Fonts
+        shell: pwsh
+        run: |
+          Invoke-WebRequest https://github.com/rsms/inter/releases/download/v4.1/Inter-4.1.zip -OutFile inter.zip
+          Expand-Archive inter.zip -DestinationPath inter
+          New-Item -ItemType Directory -Force Shared/Fonts | Out-Null
+          foreach ($w in "Regular","Medium","SemiBold","Bold") {
+            $f = Get-ChildItem inter -Recurse -Filter "Inter-$w.ttf" | Select-Object -First 1
+            if (-not $f) { throw "Inter-$w.ttf not found" }
+            Copy-Item $f.FullName Shared/Fonts/
+          }
+          $lic = Get-ChildItem inter -Recurse -Filter "LICENSE.txt" | Select-Object -First 1
+          Copy-Item $lic.FullName Shared/Fonts/LICENSE.txt
+          Get-ChildItem Shared/Fonts
       - name: Tests
         run: dotnet run --project Tests/Tests.csproj -c Release
       - name: Publish
