@@ -84,9 +84,14 @@ public sealed class LyricsCanvas : FrameworkElement
         var colors = engine.Colors;
         switch (FixedStyle ?? engine.Style)
         {
-            case LyricStyle.Ship: Ship(dc, w, h, words, i, t, colors); break;
-            case LyricStyle.Fisheye: Fisheye(dc, w, h, words, i, t, colors); break;
-            case LyricStyle.Codestyle: Code(dc, w, h, doc, words, i, t, colors); break;
+            case LyricStyle.Ship: Ship(dc, w, h, words, i, t, colors, false); break;
+            case LyricStyle.Visual: Ship(dc, w, h, words, i, t, colors, true); break;
+            case LyricStyle.Fisheye: Fisheye(dc, w, h, words, i, t, colors, false); break;
+            case LyricStyle.FisheyeVisual: Fisheye(dc, w, h, words, i, t, colors, true); break;
+            case LyricStyle.Codestyle: Code(dc, w, h, doc, words, i, t, colors, false); break;
+            case LyricStyle.CodestyleVisual: Code(dc, w, h, doc, words, i, t, colors, true); break;
+            case LyricStyle.Branches: Branches(dc, w, h, doc, words, i, t, colors); break;
+            case LyricStyle.Web: Web(dc, w, h, doc, words, i, t, colors); break;
             default: Constellation(dc, w, h, doc, words, i, t, colors); break;
         }
         dc.Pop();
@@ -96,7 +101,7 @@ public sealed class LyricsCanvas : FrameworkElement
 
     /// The last few words stack into a wall that drifts in 3D: each new word
     /// pops in at the bottom and pushes the others up and away.
-    void Ship(DrawingContext dc, double w, double h, List<LyricWord> words, int i, double t, (Rgb Lyric, Rgb Highlight, Rgb Secondary) c)
+    void Ship(DrawingContext dc, double w, double h, List<LyricWord> words, int i, double t, (Rgb Lyric, Rgb Highlight, Rgb Secondary) c, bool icons)
     {
         double clockT = clock.Elapsed.TotalSeconds;
         double pop = Pop((t - words[i].Start) / 0.24);
@@ -119,6 +124,13 @@ public sealed class LyricsCanvas : FrameworkElement
             // Older words drift right and back, like a wall turning away.
             double x = w / 2 - ft.Width / 2 + age * Base * 0.18 * (1 - (age == 1 ? 1 - pop : 0));
             dc.DrawText(ft, new Point(x, y - ft.Height));
+            // Visual: an icon pops in beside words that have one.
+            if (icons && Symbols.For(word.Text) is { } icon)
+            {
+                double ip = Pop((t - word.Start) / 0.3);
+                var emoji = Emoji(icon, size * 0.85 * ip, opacity, col);
+                dc.DrawText(emoji, new Point(x + ft.Width + size * 0.2, y - ft.Height + (ft.Height - emoji.Height) / 2));
+            }
             double step = ft.Height * 0.92;
             y -= age == 0 ? step * pop : step;
         }
@@ -126,7 +138,7 @@ public sealed class LyricsCanvas : FrameworkElement
     }
 
     /// Previous, current and next word, the current one magnified under a lens.
-    void Fisheye(DrawingContext dc, double w, double h, List<LyricWord> words, int i, double t, (Rgb Lyric, Rgb Highlight, Rgb Secondary) c)
+    void Fisheye(DrawingContext dc, double w, double h, List<LyricWord> words, int i, double t, (Rgb Lyric, Rgb Highlight, Rgb Secondary) c, bool icons)
     {
         double p = EaseOut((t - words[i].Start) / 0.22);
         double cx = w / 2, cy = h / 2, r = Base * 1.55;
@@ -144,6 +156,11 @@ public sealed class LyricsCanvas : FrameworkElement
         if (fit < 1) cur = Text(words[i].Text, Base * 1.2 * fit, Paint(c.Highlight, 1), Face(FontWeights.Bold));
         double slide = (1 - p) * Base * 1.4;
         dc.DrawText(cur, new Point(cx - cur.Width / 2 + slide, cy - cur.Height / 2));
+        if (icons && Symbols.For(words[i].Text) is { } icon)
+        {
+            var emoji = Emoji(icon, Base * 0.7 * Pop((t - words[i].Start) / 0.3), 1, c.Highlight);
+            dc.DrawText(emoji, new Point(cx - emoji.Width / 2 + slide, cy - r - emoji.Height * 0.55));
+        }
         if (i > 0)
         {
             var prev = Text(words[i - 1].Text, Base * 0.48, Paint(c.Lyric, 0.6), Face(FontWeights.Medium));
@@ -158,7 +175,7 @@ public sealed class LyricsCanvas : FrameworkElement
 
     /// Each line typed out as a line of code, with the sung part appearing
     /// letter by letter and the earlier lines above it like an editor.
-    void Code(DrawingContext dc, double w, double h, LyricDocument doc, List<LyricWord> words, int i, double t, (Rgb Lyric, Rgb Highlight, Rgb Secondary) c)
+    void Code(DrawingContext dc, double w, double h, LyricDocument doc, List<LyricWord> words, int i, double t, (Rgb Lyric, Rgb Highlight, Rgb Secondary) c, bool icons)
     {
         var lines = doc.Lines();
         int li = lines.FindIndex(l => l[0].Line == words[i].Line);
@@ -201,6 +218,12 @@ public sealed class LyricsCanvas : FrameworkElement
             };
             double x = x0, y = y0 + (k - firstLine) * row;
             dc.PushOpacity(dim);
+            // Codestyle Visual: an icon before rows that have one.
+            if (icons && line.Select(word => Symbols.For(word.Text)).FirstOrDefault(e => e is not null) is { } rowIcon)
+            {
+                var emoji = Emoji(rowIcon, size, 1, c.Highlight);
+                dc.DrawText(emoji, new Point(x - emoji.Width - size * 0.5, y));
+            }
             foreach (var (s, b) in parts)
             {
                 if (s.Length == 0) continue;
@@ -211,6 +234,126 @@ public sealed class LyricsCanvas : FrameworkElement
             if (k == li && (clock.Elapsed.TotalSeconds % 1.0) < 0.6) dc.DrawRectangle(keyBrush, null, new Rect(x + 2, y + size * 0.15, size * 0.5, size * 1.15));
             dc.Pop();
         }
+    }
+
+    FormattedText Emoji(string icon, double size, double opacity, Rgb tint)
+    {
+        var ft = new FormattedText(icon, CultureInfo.CurrentCulture, FlowDirection.LeftToRight, EmojiFace, Math.Max(1, size), Paint(tint, opacity), VisualTreeHelper.GetDpi(this).PixelsPerDip);
+        return ft;
+    }
+    static readonly Typeface EmojiFace = new(new FontFamily("Segoe UI Emoji"), FontStyles.Normal, FontWeights.Normal, FontStretches.Normal);
+
+    static List<LyricWord>? CurrentLine(LyricDocument doc, List<LyricWord> words, int i, out int li)
+    {
+        var lines = doc.Lines();
+        li = lines.FindIndex(l => l[0].Line == words[i].Line);
+        return li < 0 ? null : lines[li];
+    }
+
+    void Label(DrawingContext dc, LyricWord word, Point at, bool active, double t, (Rgb Lyric, Rgb Highlight, Rgb Secondary) c, double size)
+    {
+        double appear = EaseOut((t - word.Start) / 0.25);
+        double scale = active ? 1 : 0.62;
+        var ft = Text(word.Text, size * scale * (0.7 + 0.3 * Pop((t - word.Start) / 0.3)), Paint(active ? c.Highlight : c.Lyric, appear * (active ? 1 : 0.8)), Face(active ? FontWeights.SemiBold : FontWeights.Medium));
+        dc.DrawText(ft, new Point(at.X - ft.Width / 2, at.Y - ft.Height / 2));
+    }
+
+    /// A wavy stem grows through the line and every word sprouts a branch.
+    void Branches(DrawingContext dc, double w, double h, LyricDocument doc, List<LyricWord> words, int i, double t, (Rgb Lyric, Rgb Highlight, Rgb Secondary) c)
+    {
+        var line = CurrentLine(doc, words, i, out int li);
+        if (line is null) return;
+        double b = Base, n = Math.Max(1, line.Count);
+        double x0 = w * 0.18, spacing = Math.Min(b * 2.1, w * 0.64 / n);
+        double cy = h * 0.56, amp = b * 0.3, wave = spacing * 1.15, phase = Hash(li, 50) * Math.PI * 2;
+        double StemY(double x) => cy + Math.Sin((x - x0) / wave * Math.PI + phase) * amp;
+        double F = b * 0.62, headX = x0;
+        var stemPen = new Pen(Paint(c.Highlight, 0.45), Math.Max(1.5, b * 0.05)) { StartLineCap = PenLineCap.Round, EndLineCap = PenLineCap.Round };
+        var labels = new List<(LyricWord Word, Point At, bool Active)>();
+        for (int k = 0; k < line.Count; k++)
+        {
+            var word = line[k];
+            if (word.Start > t) break;
+            double bx = x0 + (k + 0.5) * spacing;
+            var root = new Point(bx, StemY(bx));
+            bool up = (k % 2 == 0) != (Hash(li * 13 + k, 51) > 0.75);
+            double len = b * (1.2 + Hash(li * 13 + k, 52) * 1.5);
+            var tip = new Point(bx + (Hash(li * 13 + k, 53) - 0.5) * spacing * 0.7, root.Y + (up ? -len : len));
+            double grow = EaseOut((t - word.Start) / 0.35);
+            bool active = t < word.End || k == line.Count - 1 && i == words.IndexOf(word);
+            var end = new Point(root.X + (tip.X - root.X) * grow, root.Y + (tip.Y - root.Y) * grow);
+            var g = new StreamGeometry();
+            using (var ctx = g.Open())
+            {
+                ctx.BeginFigure(root, false, false);
+                ctx.QuadraticBezierTo(new Point(root.X, (root.Y + end.Y) / 2), end, true, true);
+            }
+            g.Freeze();
+            dc.DrawGeometry(null, new Pen(Paint(c.Secondary, 0.6), Math.Max(1, b * 0.03)), g);
+            dc.DrawEllipse(Paint(c.Highlight, grow), null, end, b * 0.07, b * 0.07);
+            labels.Add((word, new Point(end.X, end.Y + (up ? -1 : 1) * (F * 0.5 + b * 0.25)), word == words[i]));
+            headX = word == words[i] ? bx + Clamp01((t - word.Start) / Math.Max(0.1, word.End - word.Start)) * spacing * 0.5 : Math.Max(headX, bx);
+        }
+        // The stem, drawn up to where the singing has reached.
+        var stem = new StreamGeometry();
+        using (var ctx = stem.Open())
+        {
+            ctx.BeginFigure(new Point(x0, StemY(x0)), false, false);
+            for (double x = x0 + 4; x <= headX; x += 4) ctx.LineTo(new Point(x, StemY(x)), true, true);
+        }
+        stem.Freeze();
+        dc.DrawGeometry(null, stemPen, stem);
+        foreach (var (word, at, active) in labels) Label(dc, word, at, active, t, c, F);
+    }
+
+    /// A twelve-spoke spider web; each word spins a strand out from the hub.
+    void Web(DrawingContext dc, double w, double h, LyricDocument doc, List<LyricWord> words, int i, double t, (Rgb Lyric, Rgb Highlight, Rgb Secondary) c)
+    {
+        var line = CurrentLine(doc, words, i, out int li);
+        if (line is null) return;
+        var hub = new Point(w / 2, h * 0.52);
+        double R = Math.Min(h * 0.36, w * 0.28), F = Base * 0.55;
+        // The faint web: spokes and rings.
+        var faint = new Pen(Paint(c.Secondary, 0.16), 1);
+        for (int k = 0; k < 12; k++)
+        {
+            double a = k / 12.0 * 2 * Math.PI - Math.PI / 2;
+            dc.DrawLine(faint, hub, new Point(hub.X + Math.Cos(a) * R, hub.Y + Math.Sin(a) * R));
+        }
+        foreach (var ring in new[] { 0.35, 0.6, 0.85 })
+        {
+            var g = new StreamGeometry();
+            using (var ctx = g.Open())
+            {
+                for (int k = 0; k <= 12; k++)
+                {
+                    double a = k / 12.0 * 2 * Math.PI - Math.PI / 2;
+                    var p = new Point(hub.X + Math.Cos(a) * R * ring, hub.Y + Math.Sin(a) * R * ring);
+                    if (k == 0) ctx.BeginFigure(p, false, false); else ctx.LineTo(p, true, true);
+                }
+            }
+            g.Freeze();
+            dc.DrawGeometry(null, faint, g);
+        }
+        int start = (int)(Hash(li, 41) * 12);
+        var strand = new Pen(Paint(c.Secondary, 0.65), Math.Max(1, Base * 0.03));
+        for (int k = 0; k < line.Count; k++)
+        {
+            var word = line[k];
+            if (word.Start > t) break;
+            int spoke = (start + k * 5) % 12;
+            double ring = 0.45 + 0.5 * Hash(li * 19 + k, 42);
+            double a = spoke / 12.0 * 2 * Math.PI - Math.PI / 2;
+            var p = new Point(hub.X + Math.Cos(a) * R * ring, hub.Y + Math.Sin(a) * R * ring);
+            double grow = EaseOut((t - word.Start) / 0.4);
+            var end = new Point(hub.X + (p.X - hub.X) * grow, hub.Y + (p.Y - hub.Y) * grow);
+            bool active = word == words[i] && t < word.End + 0.4;
+            dc.DrawLine(active ? new Pen(Paint(c.Highlight, 0.8), Math.Max(1.5, Base * 0.04)) : strand, hub, end);
+            dc.DrawEllipse(Paint(c.Highlight, grow), null, end, Base * 0.07, Base * 0.07);
+            var off = Math.Abs(Math.Cos(a)) > 0.8 ? new Vector(Math.Sign(Math.Cos(a)) * (F * word.Text.Length * 0.32 + F * 0.5), 0) : new Vector(0, Math.Sign(Math.Sin(a)) * (F * 0.9));
+            Label(dc, word, end + off * (active ? 1 : 0.7), active, t, c, F);
+        }
+        dc.DrawEllipse(Paint(c.Highlight, 0.9), null, hub, Base * 0.09, Base * 0.09);
     }
 
     /// The line's words become stars joined into a constellation as they're sung.

@@ -3,9 +3,9 @@ using LuneVers;
 
 namespace Vers;
 
-/// The four styles on Windows, picked from the Mac's nine. Timing is the same
-/// in all of them; only the way the words arrive changes.
-public enum LyricStyle { Ship, Fisheye, Codestyle, Constellation }
+/// The nine styles, in the Mac app's menu order. Timing is the same in all
+/// of them; only the way the words arrive changes.
+public enum LyricStyle { Ship, Fisheye, Visual, FisheyeVisual, Codestyle, CodestyleVisual, Branches, Web, Constellation }
 
 public sealed class VersSettings
 {
@@ -28,12 +28,21 @@ public sealed class VersSettings
 
 public static class StyleInfo
 {
-    public static string Name(LyricStyle s) => s.ToString();
+    public static string Name(LyricStyle s) => s switch
+    {
+        LyricStyle.FisheyeVisual => "Fisheye Visual", LyricStyle.CodestyleVisual => "Codestyle Visual", _ => s.ToString(),
+    };
+    public static bool Icons(LyricStyle s) => s is LyricStyle.Visual or LyricStyle.FisheyeVisual or LyricStyle.CodestyleVisual;
     public static string Summary(LyricStyle s) => s switch
     {
         LyricStyle.Ship => "The last few words stack into a wall that drifts in 3D",
         LyricStyle.Fisheye => "Previous, current and next word under a glass lens",
+        LyricStyle.Visual => "The drifting stack with icons popping in beside words",
+        LyricStyle.FisheyeVisual => "The lens, with icons switched on",
         LyricStyle.Codestyle => "Each line typed out as code with syntax colors",
+        LyricStyle.CodestyleVisual => "Codestyle with an icon before some rows",
+        LyricStyle.Branches => "A wavy stem grows; every word sprouts a branch",
+        LyricStyle.Web => "A spider web; each word spins a strand from the hub",
         _ => "Words become stars joined into a constellation",
     };
 
@@ -47,11 +56,13 @@ public static class StyleInfo
             spans[w.Line] = spans.TryGetValue(w.Line, out var s) ? (Math.Min(s.Start, w.Start), Math.Max(s.End, w.End)) : (w.Start, w.End);
         double singing = spans.Values.Sum(s => Math.Max(0.3, s.End - s.Start));
         double rate = words.Count / Math.Max(1, singing);
-        LyricStyle[] group = rate > 3.0 ? new[] { LyricStyle.Ship, LyricStyle.Codestyle }
-            : rate > 2.1 ? new[] { LyricStyle.Fisheye, LyricStyle.Ship, LyricStyle.Codestyle }
-            : new[] { LyricStyle.Constellation, LyricStyle.Fisheye, LyricStyle.Constellation };
+        double longWords = words.Count(w => w.Text.Length >= 7) / (double)words.Count;
+        // Same groups and the same hash as the Mac, so a song gets the same style on both.
+        LyricStyle[] group = rate > 3.0 ? new[] { LyricStyle.Ship, LyricStyle.Codestyle, LyricStyle.CodestyleVisual }
+            : rate > 2.1 ? (longWords > 0.12 ? new[] { LyricStyle.Visual, LyricStyle.Branches, LyricStyle.CodestyleVisual } : new[] { LyricStyle.Visual, LyricStyle.Branches, LyricStyle.FisheyeVisual })
+            : new[] { LyricStyle.Constellation, LyricStyle.Web, LyricStyle.Fisheye, LyricStyle.Constellation };
         ulong h = 1469598103934665603;
-        foreach (var ch in (title + "|" + artist).ToLowerInvariant()) { h ^= ch; h *= 1099511628211; }
+        foreach (var b in System.Text.Encoding.UTF8.GetBytes((title + "|" + artist).ToLowerInvariant())) { h ^= b; h *= 1099511628211; }
         return group[(int)(h % (ulong)group.Length)];
     }
 }

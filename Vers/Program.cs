@@ -94,10 +94,10 @@ public sealed class Shell
         menu.Items.Add(new Separator());
 
         var style = new MenuItem { Header = "Style" };
-        style.Items.Add(Item(s.AutoStyle && engine.AutoPick is { } pick ? $"Auto · {pick}" : "Auto (matches each song)", () => { s.AutoStyle = !s.AutoStyle; engine.Update(); }, s.AutoStyle,
+        style.Items.Add(Item(s.AutoStyle && engine.AutoPick is { } pick ? $"Auto · {StyleInfo.Name(pick)}" : "Auto (matches each song)", () => { s.AutoStyle = !s.AutoStyle; engine.Update(); }, s.AutoStyle,
             "Picks a style to suit each song: fast lyrics get punchy styles, slow songs the airy ones"));
         foreach (var st in Enum.GetValues<LyricStyle>())
-            style.Items.Add(Item(st.ToString(), () => { s.Style = st; s.AutoStyle = false; engine.Update(); }, !s.AutoStyle && s.Style == st, StyleInfo.Summary(st)));
+            style.Items.Add(Item(StyleInfo.Name(st), () => { s.Style = st; s.AutoStyle = false; engine.Update(); }, !s.AutoStyle && s.Style == st, StyleInfo.Summary(st)));
         menu.Items.Add(style);
 
         var font = new MenuItem { Header = "Font" };
