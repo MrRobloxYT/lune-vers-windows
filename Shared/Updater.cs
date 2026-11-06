@@ -18,41 +18,81 @@ namespace LuneVers;
 public static class Updater
 {
     const string Releases = "https://api.github.com/repos/MrRobloxYT/lune-vers/releases?per_page=10";
-    public enum Result { UpToDate, Installing, Failed }
+    public enum Result { UpToDate, Installing, Failed, Busy }
     static bool busy;
+    public static string LastError { get; private set; } = "";
 
     public static Version Current => Normal(Assembly.GetEntryAssembly()?.GetName().Version ?? new Version(1, 0));
     static Version Normal(Version v) => new(v.Major, v.Minor, Math.Max(0, v.Build));
 
+    const string Manifest = "https://mrrobloxyt.github.io/lune-vers/update.json";
+    const string Latest = "https://api.github.com/repos/MrRobloxYT/lune-vers/releases/latest";
+
+    /// The newest version, its installer and checksum. Asks the website first,
+    /// then GitHub two ways, so one service being down never blocks updates.
+    /// For tests: what the updater would install right now.
+    public static async Task<(Version Version, string Url, string Sha256)?> FindAsync(string app)
+    {
+        using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(30) };
+        http.DefaultRequestHeaders.UserAgent.ParseAdd("LuneVers-Updater/1.0");
+        return await Find(http, app, default);
+    }
+
+    static async Task<(Version Version, string Url, string Sha256)?> Find(HttpClient http, string app, CancellationToken ct)
+    {
+        Exception? last = null;
+        // 1. The website's update file.
+        try
+        {
+            using var doc = JsonDocument.Parse(await http.GetStringAsync(Manifest + "?t=" + DateTime.UtcNow.Ticks, ct));
+            var win = doc.RootElement.GetProperty("windows");
+            if (Version.TryParse(win.GetProperty("version").GetString(), out var v) && win.TryGetProperty(app, out var entry))
+                return (Normal(v), entry.GetProperty("url").GetString()!, entry.GetProperty("sha256").GetString()!.ToLowerInvariant());
+        }
+        catch (Exception e) when (e is not OperationCanceledException) { last = e; }
+        // 2. GitHub's latest release, then 3. its release list.
+        foreach (var url in new[] { Latest, Releases })
+        {
+            try
+            {
+                using var doc = JsonDocument.Parse(await http.GetStringAsync(url, ct));
+                var releases = doc.RootElement.ValueKind == JsonValueKind.Array ? doc.RootElement.EnumerateArray().ToList() : new List<JsonElement> { doc.RootElement };
+                (Version, string, string)? best = null;
+                foreach (var release in releases)
+                {
+                    if (release.GetProperty("draft").GetBoolean() || release.GetProperty("prerelease").GetBoolean()) continue;
+                    var tag = release.GetProperty("tag_name").GetString() ?? "";
+                    if (!tag.StartsWith("windows-") || !Version.TryParse(tag["windows-".Length..], out var v)) continue;
+                    v = Normal(v);
+                    if (best is { } b0 && v <= b0.Item1) continue;
+                    foreach (var asset in release.GetProperty("assets").EnumerateArray())
+                    {
+                        if (asset.GetProperty("name").GetString() != $"{app}-Setup.exe") continue;
+                        var digest = asset.TryGetProperty("digest", out var d) && d.ValueKind == JsonValueKind.String ? d.GetString() : null;
+                        if (digest is null || !digest.StartsWith("sha256:")) continue;
+                        best = (v, asset.GetProperty("browser_download_url").GetString()!, digest["sha256:".Length..].ToLowerInvariant());
+                    }
+                }
+                if (best is not null) return best;
+            }
+            catch (Exception e) when (e is not OperationCanceledException) { last = e; }
+        }
+        if (last is not null) throw last;
+        return null;
+    }
+
     public static async Task<Result> UpdateAsync(string app, Action<string, double>? progress = null, CancellationToken ct = default)
     {
-        if (busy) return Result.Failed;
+        if (busy) return Result.Busy;
         busy = true;
         try
         {
             using var http = new HttpClient { Timeout = TimeSpan.FromMinutes(10) };
             http.DefaultRequestHeaders.UserAgent.ParseAdd("LuneVers-Updater/1.0");
-            http.DefaultRequestHeaders.Accept.ParseAdd("application/vnd.github+json");
-            using var doc = JsonDocument.Parse(await http.GetStringAsync(Releases, ct));
-            Version best = Current;
-            string? url = null, digest = null;
-            foreach (var release in doc.RootElement.EnumerateArray())
-            {
-                if (release.GetProperty("draft").GetBoolean() || release.GetProperty("prerelease").GetBoolean()) continue;
-                var tag = release.GetProperty("tag_name").GetString() ?? "";
-                if (!tag.StartsWith("windows-") || !Version.TryParse(tag["windows-".Length..], out var v)) continue;
-                v = Normal(v);
-                if (v <= best) continue;
-                foreach (var asset in release.GetProperty("assets").EnumerateArray())
-                {
-                    if (asset.GetProperty("name").GetString() != $"{app}-Setup.exe") continue;
-                    best = v;
-                    url = asset.GetProperty("browser_download_url").GetString();
-                    digest = asset.TryGetProperty("digest", out var d) && d.ValueKind == JsonValueKind.String ? d.GetString() : null;
-                }
-            }
-            if (url is null) return Result.UpToDate;
-            if (digest is null || !digest.StartsWith("sha256:")) return Result.Failed;
+            var found = await Find(http, app, ct);
+            if (found is not { } f || f.Version <= Current) return Result.UpToDate;
+            Version best = f.Version;
+            string? url = f.Url, digest = "sha256:" + f.Sha256;
             string label = $"Updating {app} to {best.ToString(2)}…";
             progress?.Invoke(label, 0);
             using var response = await http.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, ct);
@@ -78,7 +118,7 @@ public static class Updater
             Process.Start(new ProcessStartInfo(path, "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /CLOSEAPPLICATIONS") { UseShellExecute = true });
             return Result.Installing;
         }
-        catch { return Result.Failed; }
+        catch (Exception e) { LastError = e.Message; return Result.Failed; }
         finally { busy = false; }
     }
 
@@ -102,9 +142,10 @@ public static class Updater
             notice.Set(text, pct);
         }));
         if (result == Result.Installing) { quit(); return result; }
+        if (result == Result.Busy && notice is not null) { notice.Set($"{app} is already checking for updates…", -1); await Task.Delay(2600); notice.Close(); return result; }
         if (notice is not null)
         {
-            notice.Set(result == Result.UpToDate ? $"{app} {Current.ToString(2)} is up to date" : "Couldn't check for updates. Try again later.", -2);
+            notice.Set(result == Result.UpToDate ? $"{app} {Current.ToString(2)} is up to date" : $"Couldn't reach the update server. {app} will try again by itself. ({LastError})", -2);
             await Task.Delay(2600);
             notice.Close();
         }

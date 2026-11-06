@@ -35,5 +35,12 @@ Check(hit.Beat > 0.5f && hit.Energy > 0, "beat onset");
 
 Check(MediaWatcher.FriendlyName("Spotify.exe") == "Spotify" && MediaWatcher.FriendlyName("AppleInc.AppleMusicWin_nzyj5cx40ttqa!App") == "Apple Music", "player names");
 
+foreach (var app in new[] { "Lune", "Vers" })
+{
+    var found = await Updater.FindAsync(app);
+    Console.WriteLine($"  updater sees {app}: {found?.Version} {found?.Url}");
+    Check(found is { } f && f.Version >= new Version(1, 3, 0) && f.Sha256.Length == 64 && f.Url.EndsWith($"{app}-Setup.exe"), $"updater finds {app}");
+}
+
 Console.WriteLine(failures == 0 ? "ALL PASSED" : $"{failures} FAILED");
 return failures == 0 ? 0 : 1;

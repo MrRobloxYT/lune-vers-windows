@@ -1,5 +1,5 @@
 #define AppName "Lune"
-#define AppVersion "1.3.0"
+#define AppVersion "1.4.0"
 [Setup]
 AppId={{LuneVers-Lune}
 AppName={#AppName}
