@@ -88,8 +88,8 @@ public sealed class Shell
         {
             var w = new OverlayWindow(engine, s.BlackBackground);
             w.Place(m);
-            w.Show();
-            w.Reposition();
+            // The black window shows itself only while the black is on.
+            if (!s.BlackBackground) { w.Show(); w.Reposition(); }
             windows.Add(w);
         }
     }

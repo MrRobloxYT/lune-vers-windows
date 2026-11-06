@@ -36,9 +36,11 @@ public sealed class LyricsCanvas : FrameworkElement
         CompositionTarget.Rendering += OnFrame;
     }
 
-    void OnFrame(object? sender, EventArgs e)
+    void OnFrame(object? sender, EventArgs e) { if (IsVisible) Tick(); }
+
+    /// Advances the fades. Also called by the black window while it's hidden.
+    public void Tick()
     {
-        if (!IsVisible) return;
         double now = clock.Elapsed.TotalSeconds;
         // 60 fps whenever lyrics are on screen; a slow tick when nothing shows.
         bool busy = presence > 0.001 || dark > 0.001 || Busy();
@@ -486,12 +488,23 @@ public sealed class OverlayWindow : Window
             if (opaque) { alpha = 0; Native.SetAlpha(hwnd, 0); }
         };
         Canvas.WindowIsBlack = opaque;
-        if (opaque) CompositionTarget.Rendering += (_, _) =>
+        // The black window only exists on screen while the black is meant to
+        // show. If fading it ever failed on some PC, it still can't cover the
+        // screen while nothing is playing.
+        if (opaque)
         {
-            if (hwnd == IntPtr.Zero) return;
-            var a = (byte)Math.Round(Math.Clamp(Canvas.Dark, 0, 1) * 255);
-            if (a != alpha) { alpha = a; Native.SetAlpha(hwnd, a); }
-        };
+            void Sync()
+            {
+                if (hwnd == IntPtr.Zero) return;
+                if (!IsVisible) Canvas.Tick();
+                var a = (byte)Math.Round(Math.Clamp(Canvas.Dark, 0, 1) * 255);
+                if (a != alpha) { alpha = a; Native.SetAlpha(hwnd, a); }
+                if (a == 0 && IsVisible) Hide();
+                else if (a > 0 && !IsVisible) { Show(); Reposition(); }
+            }
+            CompositionTarget.Rendering += (_, _) => Sync();
+            new System.Windows.Threading.DispatcherTimer(TimeSpan.FromMilliseconds(40), System.Windows.Threading.DispatcherPriority.Render, (_, _) => Sync(), Dispatcher).Start();
+        }
         // While the screen is black it takes clicks and keys, so nothing hidden
         // gets clicked and Space pauses the song (handy with one monitor).
         Canvas.DarkChanged += dark =>
