@@ -21,8 +21,18 @@ jobs:
             if (-not $f) { throw "Inter-$w.ttf not found" }
             Copy-Item $f.FullName Shared/Fonts/
           }
+          # Free stand-ins for the Mac fonts (SIL Open Font License; Arimo: Apache 2.0).
+          $fonts = @{ "nunito"="Nunito"; "source-serif-4"="SourceSerif4"; "arimo"="Arimo"; "nunito-sans"="NunitoSans"; "jost"="Jost"; "playfair-display"="PlayfairDisplay" }
+          foreach ($id in $fonts.Keys) {
+            foreach ($w in 400,500,600,700) {
+              $out = "Shared/Fonts/$($fonts[$id])-$w.ttf"
+              Invoke-WebRequest "https://cdn.jsdelivr.net/fontsource/fonts/$id@latest/latin-$w-normal.ttf" -OutFile $out
+              if ((Get-Item $out).Length -lt 10000) { throw "$id $w download failed" }
+            }
+          }
           $lic = Get-ChildItem inter -Recurse -Filter "LICENSE.txt" | Select-Object -First 1
-          Copy-Item $lic.FullName Shared/Fonts/LICENSE.txt
+          $credits = "Fonts in this app are free, open-source fonts:`r`nInter (rsms.me/inter), Nunito, Nunito Sans, Source Serif 4, Jost and Playfair Display (SIL Open Font License 1.1), and Arimo (Apache License 2.0).`r`n`r`nInter's license:`r`n`r`n"
+          Set-Content Shared/Fonts/LICENSE.txt ($credits + (Get-Content $lic.FullName -Raw))
           Get-ChildItem Shared/Fonts
       - name: Tests
         run: dotnet run --project Tests/Tests.csproj -c Release

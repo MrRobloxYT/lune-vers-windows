@@ -26,7 +26,7 @@ public sealed class VersSettings
     public string LastVersion { get; set; } = "";
     public double Offset { get; set; }    // seconds; positive shows lyrics earlier
 
-    public static readonly string[] Fonts = { "Inter", "Segoe UI Variable Display", "Georgia", "Bahnschrift", "Cascadia Code" };
+    public static readonly string[] Fonts = { "Inter", "Nunito", "Source Serif 4", "Arimo", "Nunito Sans", "Jost", "Playfair Display", "Segoe UI Variable Display" };
 }
 
 public static class StyleInfo

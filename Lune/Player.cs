@@ -368,6 +368,8 @@ public sealed class PlayerWindow : Window
     }
 
     StackPanel lunePage = new(), versPage = new();
+    TextBlock? musicStatus;
+    Border? meterFill;
     Pill? luneTab, versTab;
 
     Border BuildSettings()
@@ -415,6 +417,38 @@ public sealed class PlayerWindow : Window
         var s = model.Settings;
         Row("Light", Toggle(() => s.Enabled, v => s.Enabled = v), "Lights the edges of your screen");
         Row("Only while music plays", Toggle(() => s.OnlyWhilePlaying, v => s.OnlyWhilePlaying = v), "Fades out when you pause");
+        WrapPanel Choices<T>(IEnumerable<(T Value, string Name)> items, Func<T, bool> selected, Action<T> pick)
+        {
+            var wrap = new WrapPanel { Margin = new Thickness(0, 2, 0, 4) };
+            foreach (var (value, name) in items)
+            {
+                var p = Pill.Text(name, 28, null, 11.5);
+                p.Margin = new Thickness(0, 0, 6, 6);
+                p.Click += () => { pick(value); Preview(); model.Update(); };
+                refreshers.Add(() => p.Tint = selected(value) ? model.Accent.Color : null);
+                wrap.Children.Add(p);
+            }
+            return wrap;
+        }
+        page.Children.Add(Ui.Label("Colors", 12, FontWeights.Medium, 0.6));
+        page.Children.Add(Choices(new[] { (1, "1 color"), (2, "2 colors"), (3, "3 colors") }, n => s.ColorCount == n, n => s.ColorCount = n));
+        page.Children.Add(Ui.Label("Animation", 12, FontWeights.Medium, 0.6));
+        page.Children.Add(Choices(new[] { (Motion.Default, "Default"), (Motion.MusicSync, "Music Sync"), (Motion.Idle, "Idle"), (Motion.None, "No Animation") }, m => s.Motion == m, m => s.Motion = m));
+        // Music Sync: the light follows the beat of whatever the PC is playing.
+        var meterCard = new Border { CornerRadius = new CornerRadius(10), Background = Ui.Fill(0.05), Padding = new Thickness(12, 9, 12, 10), Margin = new Thickness(0, 0, 0, 6) };
+        var meterStack = new StackPanel();
+        musicStatus = Ui.Label("Waiting for sound", 12, FontWeights.Medium, 0.85);
+        meterStack.Children.Add(musicStatus);
+        var meterTrack = new Border { Height = 4, CornerRadius = new CornerRadius(2), Background = Ui.Fill(0.08), Margin = new Thickness(0, 7, 0, 0) };
+        meterFill = new Border { Height = 4, CornerRadius = new CornerRadius(2), HorizontalAlignment = HorizontalAlignment.Left, Width = 4 };
+        meterTrack.Child = meterFill;
+        meterStack.Children.Add(meterTrack);
+        var note = Ui.Label("Listens to what your PC plays. Never your microphone.", 10.5, null, 0.45);
+        note.Margin = new Thickness(0, 6, 0, 0);
+        meterStack.Children.Add(note);
+        meterCard.Child = meterStack;
+        refreshers.Add(() => meterCard.Visibility = s.Motion == Motion.MusicSync ? Visibility.Visible : Visibility.Collapsed);
+        page.Children.Add(meterCard);
         Row("Auto: colors from the album", Toggle(() => !s.OverrideAlbum, v => s.OverrideAlbum = !v), "Off uses your own colors below");
         Row("Auto: follow screen colors", Toggle(() => s.FollowScreen, v => s.FollowScreen = v), "Each edge takes the color of what's on screen");
 
@@ -444,6 +478,26 @@ public sealed class PlayerWindow : Window
         glowSlider.Changed += v => { s.Glow = v; Preview(); model.Update(); };
         refreshers.Add(() => glowSlider.Value = s.Glow);
         Row("Glow", glowSlider);
+        page.Children.Add(Ui.Label("Display", 12, FontWeights.Medium, 0.6));
+        var displays = new WrapPanel { Margin = new Thickness(0, 2, 0, 4) };
+        void FillDisplayChoices()
+        {
+            displays.Children.Clear();
+            var monitors = Native.Monitors();
+            var items = new List<(string Key, string Name)> { ("main", "Main display") };
+            foreach (var m in monitors.Skip(1)) items.Add((m.Device, m.Name));
+            if (monitors.Count > 1) items.Add(("all", "All displays"));
+            foreach (var (key, name) in items)
+            {
+                var p = Pill.Text(name, 28, null, 11.5);
+                p.Margin = new Thickness(0, 0, 6, 6);
+                p.Tint = s.Display == key || (key == "main" && monitors.Count > 0 && s.Display == monitors[0].Device) ? model.Accent.Color : null;
+                p.Click += () => { s.Display = key; Preview(); model.Update(); FillDisplayChoices(); };
+                displays.Children.Add(p);
+            }
+        }
+        FillDisplayChoices();
+        page.Children.Add(displays);
         Row("Start with Windows", Toggle(() => Startup.IsOn("Lune"), v => Startup.Set("Lune", v), false));
 
         page = versPage;
@@ -536,7 +590,17 @@ public sealed class PlayerWindow : Window
         timing.Children.Add(later); timing.Children.Add(label); timing.Children.Add(earlier);
         Row("Timing", timing, "− shows lyrics later, + earlier");
         versPage.Children.Add(Ui.Label("Font", 12, FontWeights.Medium, 0.6));
-        versPage.Children.Add(Choices(VersSettings.Fonts.Select(f => (f, f.Replace(" Variable Display", "").Replace(" Code", ""))), f => v.Font == f, f => v.Font = f));
+        var fonts = Choices(VersSettings.Fonts.Select(f => (f, f.Replace(" Variable Display", ""))), f => v.Font == f, f => v.Font = f);
+        for (int i = 0; i < fonts.Children.Count; i++)
+        {
+            var name = VersSettings.Fonts[i];
+            if (fonts.Children[i] is Pill { Child: StackPanel row } pill)
+            {
+                foreach (var t in row.Children.OfType<TextBlock>()) t.FontFamily = LuneVers.Fonts.Family(name);
+                pill.ToolTip = LuneVers.Fonts.Label(name);
+            }
+        }
+        versPage.Children.Add(fonts);
     }
 
     DateTime previewUntil;
@@ -644,6 +708,14 @@ public sealed class PlayerWindow : Window
             ? (signal.Age < 0.5 ? Math.Min(1, signal.Energy * 0.7 + signal.Beat * 0.6) : 0.35 + 0.25 * Math.Sin(now * 2.2))
             : 0;
         pulse += (target - pulse) * (1 - Math.Exp(-dt / (target > pulse ? 0.06 : 0.25)));
+        if (settingsPanel.Visibility == Visibility.Visible && meterFill is not null && musicStatus is not null && model.Settings.Motion == Motion.MusicSync)
+        {
+            bool live = signal.Age < 0.5;
+            musicStatus.Text = live ? "Reacting to every beat" : "Waiting for sound. Play some music.";
+            meterFill.Width = Math.Max(4, 376 * Math.Clamp(live ? signal.Energy * 0.8 + signal.Beat * 0.4 : 0, 0, 1));
+            var a = model.Accent;
+            meterFill.Background = new LinearGradientBrush(a.Color, (model.Colors().Skip(1).FirstOrDefault(a)).Color, 0);
+        }
         double hover = hoverCover ? 1 : 0;
         glowLayer.Opacity = 0.55 + 0.25 * pulse + 0.35 * hover;
         double beat = 1 + pulse * 0.018;
