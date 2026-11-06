@@ -24,6 +24,7 @@ public static class Program
             return 0;
         }
         var app = new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
+        Crash.Install("Lune", app);
         app.Startup += (_, _) => new Shell(app, OpenSignal, args).Start();
         app.Run();
         return 0;
@@ -44,6 +45,12 @@ public sealed class Shell
     public Shell(Application app, string signalName, string[] args) { this.app = app; this.signalName = signalName; this.args = args; }
 
     public async void Start()
+    {
+        try { await StartCore(); }
+        catch (Exception e) { Crash.Write("Lune", e, true); app.Shutdown(1); }
+    }
+
+    async Task StartCore()
     {
         model = new Model(app.Dispatcher);
         light = new EdgeLight(model);

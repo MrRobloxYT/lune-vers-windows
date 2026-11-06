@@ -38,6 +38,21 @@ jobs:
           $p = Start-Process publish/Vers/Vers.exe -ArgumentList "--snapshot","snapshots" -Wait -PassThru -NoNewWindow
           if ($p.ExitCode -ne 0) { throw "Vers snapshot failed" }
           Get-ChildItem snapshots
+      - name: Launch test
+        shell: pwsh
+        run: |
+          $failed = $false
+          foreach ($app in "Lune","Vers") {
+            $log = Join-Path $env:APPDATA "$app\crash.log"
+            Remove-Item $log -ErrorAction SilentlyContinue
+            $p = Start-Process "publish/$app/$app.exe" -PassThru
+            Start-Sleep -Seconds 15
+            $alive = -not $p.HasExited
+            Write-Host "$app running after 15s: $alive"
+            if (Test-Path $log) { Write-Host "---- $app crash.log ----"; Get-Content $log; $failed = $true }
+            if (-not $alive) { Write-Host "$app exited with code $($p.ExitCode)"; $failed = $true } else { Stop-Process -Id $p.Id -Force }
+          }
+          if ($failed) { throw "An app failed to start" }
       - name: Installers
         shell: pwsh
         run: |

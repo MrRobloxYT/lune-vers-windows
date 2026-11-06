@@ -10,14 +10,22 @@ namespace Vers;
 
 public static class Program
 {
+    public const string ShowSignal = "LuneVers.Vers.Show";
+
     [STAThread]
     public static int Main(string[] args)
     {
         if (args.Length >= 2 && args[0] == "--snapshot") return Snapshot.Run(args[1]);
         using var mutex = new Mutex(true, "LuneVers.Vers.SingleInstance", out bool first);
-        if (!first) return 0;
+        if (!first)
+        {
+            // Already running: tell that copy to say where it is, instead of quietly doing nothing.
+            try { EventWaitHandle.OpenExisting(ShowSignal).Set(); } catch { }
+            return 0;
+        }
         var app = new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
-        app.Startup += (_, _) => new Shell(app).Start();
+        Crash.Install("Vers", app);
+        app.Startup += (_, _) => new Shell(app).Start(!args.Contains("--background"));
         app.Run();
         return 0;
     }
@@ -34,7 +42,22 @@ public sealed class Shell
 
     public Shell(Application app) { this.app = app; }
 
-    public async void Start()
+    public async void Start(bool greet)
+    {
+        try { await StartCore(greet); }
+        catch (Exception e) { Crash.Write("Vers", e, true); app.Shutdown(1); }
+    }
+
+    /// Vers has no window of its own, so say it's running and where its menu is.
+    void Greet()
+    {
+        var notice = new UpdateNotice();
+        notice.Set("Vers is running. Lyrics appear when a song plays. Its menu is the Vers icon by the clock (click ^ if it's hidden), and its settings are also in Lune's player.", -2);
+        notice.Show();
+        _ = Task.Delay(7000).ContinueWith(_ => notice.Dispatcher.BeginInvoke(notice.Close));
+    }
+
+    async Task StartCore(bool greet)
     {
         engine = new Engine(app.Dispatcher);
         engine.Changed += Layout;
@@ -43,6 +66,9 @@ public sealed class Shell
         Layout();
         Updater.Schedule("Vers", app.Dispatcher, () => { tray?.Dispose(); app.Shutdown(); });
         Updater.AnnounceIfUpdated("Vers", engine.Settings.LastVersion, v => { engine.Settings.LastVersion = v; engine.Update(); });
+        var signal = new EventWaitHandle(false, EventResetMode.AutoReset, Program.ShowSignal);
+        new Thread(() => { while (signal.WaitOne()) app.Dispatcher.BeginInvoke(Greet); }) { IsBackground = true }.Start();
+        if (greet) Greet();
         await engine.Media.StartAsync();
     }
 
