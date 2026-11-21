@@ -12,6 +12,12 @@ namespace Lune;
 public sealed class GlowAnimator
 {
     public float ColorPhase, WavePhase, Breath, Beat, FlowBoost, Energy;
+    /// Song sections: above 0 in a chorus or drop, below 0 in a quiet part.
+    public float Drive;
+    // Lumn's stop-and-go: a predicted beat clock, pulled onto the song's beats.
+    float onsetAge = 10, beatClock, beatInterval = 0.388f;
+    bool beatHigh;
+    readonly List<float> beatGaps = new();
     public Rgb[] Colors = { new(1, 0.2f, 0.4f) };
     public float[] Weights = { 1 };
     /// Screen colors stay on the edge they came from: no flow, each edge's share.
@@ -20,20 +26,77 @@ public sealed class GlowAnimator
     static (float Color, float Wave) Tuning(Motion m) => m switch
     {
         Motion.Default => (0.22f, 1.0f),
-        Motion.Idle => (0.035f, 0.25f),
-        Motion.MusicSync => (0.07f, 0.55f),
+        Motion.Idle => (0.08f, 0.25f),
+        Motion.MusicSync => (0.465f, 0.9f),
         _ => (0f, 0f),
     };
 
-    public void Step(float dt, Motion mode, float energyTarget, float beatTarget, IReadOnlyList<Rgb> palette, bool snap)
+    // Lumn's surge on each beat, speed as a multiple of the glide, every 0.04 s
+    // from 0.10 s before the beat (measured from its demo).
+    static readonly float[] Curve = { 1, 1.64f, 2.94f, 3.85f, 4.0f, 2.35f, 1.19f, 1, 1 };
+
+    public void Step(float dt, Motion mode, float energyTarget, float beatTarget, IReadOnlyList<Rgb> palette, bool snap,
+                     float period = 0, float confidence = 0, double beatTime = 0, double now = 0, float section = 0)
     {
         var t = Tuning(mode);
         float bt = beatTarget > Beat ? 0.04f : 0.22f;
         Beat += (beatTarget - Beat) * (1 - MathF.Exp(-dt / bt));
         float et = energyTarget > Energy ? 0.06f : 0.3f;
         Energy += (energyTarget - Energy) * (1 - MathF.Exp(-dt / et));
+        Drive += ((mode == Motion.MusicSync ? section : 0) - Drive) * (1 - MathF.Exp(-dt / 0.8f));
         float music = mode == Motion.MusicSync ? 1 : 0;
-        ColorPhase += dt * (t.Color + music * (Energy * 0.06f + Beat * 0.08f));
+        if (mode == Motion.MusicSync)
+        {
+            onsetAge += dt;
+            beatClock += dt;
+            if (beatClock >= beatInterval) beatClock -= beatInterval;
+            bool rising = beatTarget > 0.5f && !beatHigh;
+            beatHigh = beatTarget > 0.4f;
+            // When the tempo tracker is sure, follow its beat length and positions, eased in.
+            bool locked = confidence > 0.3f && period > 0.2f && beatTime > 0;
+            if (locked)
+            {
+                float p = period;
+                while (p > 0.75f) p /= 2;
+                while (p < 0.333f) p *= 2;
+                beatInterval += (p - beatInterval) * MathF.Min(1, dt * 3);
+                float since = (float)(now - beatTime);
+                float want = since - MathF.Floor(since / beatInterval) * beatInterval;
+                float error = want - beatClock;
+                if (error > beatInterval / 2) error -= beatInterval;
+                if (error < -beatInterval / 2) error += beatInterval;
+                beatClock += error * MathF.Min(1, dt * 4);
+                if (beatClock < 0) beatClock += beatInterval;
+                if (beatClock >= beatInterval) beatClock -= beatInterval;
+            }
+            if (!locked && rising && onsetAge > MathF.Max(0.25f, beatInterval * 0.7f))
+            {
+                if (onsetAge < 1.5f)
+                {
+                    beatGaps.Add(onsetAge); if (beatGaps.Count > 8) beatGaps.RemoveAt(0);
+                    var sorted = beatGaps.OrderBy(g => g).ToList();
+                    float gap = sorted[sorted.Count / 2];
+                    while (gap > 0.75f) gap /= 2;
+                    while (gap < 0.333f) gap *= 2;
+                    beatInterval = Math.Clamp(gap, 0.333f, 0.75f);
+                }
+                onsetAge = 0;
+                float err = beatClock < beatInterval / 2 ? beatClock : beatClock - beatInterval;
+                beatClock -= err * 0.6f;
+                if (beatClock < 0) beatClock += beatInterval;
+            }
+            float tau = beatClock < beatInterval / 2 ? beatClock : beatClock - beatInterval;
+            float pos = (tau + 0.10f) / 0.04f;
+            int k = (int)MathF.Floor(pos);
+            float C(int i) => Curve[Math.Clamp(i, 0, Curve.Length - 1)];
+            float f = pos - k;
+            float shape = (pos < 0 || k >= Curve.Length - 1) ? 1 : MathF.Max(1, 0.5f * ((2 * C(k)) + (-C(k - 1) + C(k + 1)) * f
+                + (2 * C(k - 1) - 5 * C(k) + 4 * C(k + 1) - C(k + 2)) * f * f
+                + (-C(k - 1) + 3 * C(k) - 3 * C(k + 1) + C(k + 2)) * f * f * f));
+            float glide = 0.18f / (beatInterval + 0.408f);      // ~0.18 lap per beat, like Lumn
+            ColorPhase += dt * glide * (1 + (shape - 1) * (1 + 0.3f * Drive));
+        }
+        else ColorPhase += dt * t.Color;
         FlowBoost += (music * (Energy * 0.35f + Beat * 0.25f) - FlowBoost) * (1 - MathF.Exp(-dt / 0.6f));
         WavePhase += dt * (t.Wave + FlowBoost);
         Breath += dt * (mode == Motion.Idle ? 0.55f : 0);
@@ -43,8 +106,8 @@ public sealed class GlowAnimator
         if (snap || Colors.Length != target.Length) Colors = target;
         else
         {
-            float k = 1 - MathF.Exp(-dt / 0.45f);
-            for (int i = 0; i < Colors.Length; i++) Colors[i] = Colors[i].Lerp(target[i], k);
+            float kk = 1 - MathF.Exp(-dt / 0.45f);
+            for (int i = 0; i < Colors.Length; i++) Colors[i] = Colors[i].Lerp(target[i], kk);
         }
         if (EdgeWeights is { } ew && Colors.Length == 4) { Weights = ew; ColorPhase = 0; return; }
         Weights = Colors.Length switch
@@ -110,7 +173,7 @@ public static class GlowRenderer
 
     /// How far in from the edge the light can reach, in points.
     public static float Reach(LuneSettings s) =>
-        s.GlowPoints * 4f * (s.Motion == Motion.MusicSync ? 1.85f : 1f) + s.ThicknessPoints * 3.6f + 6f;
+        s.ThicknessPoints * 1.15f * 1.55f * 3.2f + s.GlowPoints * 1.25f * 1.3f * 6f + 6f;
 
     /// Renders the region starting at (ox, oy) points into premultiplied
     /// BGRA pixels; each pixel covers `ptPerPx` points.
@@ -127,16 +190,23 @@ public static class GlowRenderer
         float W = f.W, H = f.H, R = f.Corner;
         int mode = f.Mode switch { Motion.None => 0, Motion.Default => 1, Motion.Idle => 2, _ => 3 };
         float beat = f.Anim.Beat, energy = f.Anim.Energy;
-        float amount = mode == 1 ? 0.55f : mode == 2 ? 0.22f : mode == 3 ? 0.3f + beat * 0.55f : 0;
-        float T0 = f.Thickness * (mode == 3 ? 1 + energy * 0.3f + beat * 0.45f : 1);
-        float G = f.Glow * (mode == 3 ? 1 + beat * 0.4f + energy * 0.2f : 1);
-        float reach = T0 * (1 + amount) + G * 4 + 2;
+        int n = f.Anim.Colors.Length;
+        bool liquid = mode >= 1;   // the Mac's band: thin line + thick glowing body
+        float amount = mode == 1 ? 0.55f : mode == 2 ? 0.22f : mode == 3 ? 0.3f + beat * 0.25f : 0;
+        float T0 = f.Thickness * (mode == 3 ? 1 + energy * 0.15f + beat * 0.2f : 1);
+        float G = f.Glow * (mode == 3 ? 1 + beat * 0.2f + energy * 0.1f : 1);
+        float reach = liquid ? T0 * (1 + amount) * 3.2f + G * 6 + 2 : T0 * (1 + amount) + G * 4 + 2;
+        float per = 2 * (W + H), phase = f.Anim.ColorPhase;
+        float th0 = MathF.Atan2(-H * 0.5f, -W * 0.5f);
+        float bump = mode == 3 ? 0.06f * beat : mode == 2 ? 0.2f : 0;
+        var c1c = n > 1 ? f.Anim.Colors[1] : f.Anim.Colors[0];
+        var c2c = n > 2 ? f.Anim.Colors[2] : c1c;
+        float c0a = n == 2 ? 0.45f : -0.1f, c0b = n == 2 ? 0.75f : 0.8f;
         float k = Math.Clamp(MathF.Max(f.Glow, 4) * 0.35f, 3, 40);
         float kl = Math.Clamp(MathF.Max(f.Glow, 4) * 1.1f, 8, 140);
         float aa = 0.8f * ptPerPx;
-        float level = mode == 2 ? 0.78f + 0.22f * MathF.Sin(f.Anim.Breath) : mode == 3 ? 0.78f + energy * 0.22f + beat * 0.18f : 1;
+        float level = mode == 2 ? 0.78f + 0.22f * MathF.Sin(f.Anim.Breath) : mode == 3 ? 0.95f + beat * 0.05f : 1;
         float presence = f.Presence * MathF.Min(1, level);
-        int n = f.Anim.Colors.Length;
         var c0 = f.Anim.Colors[0];
         int last = t.Count - 1;
         float inv = 1 / TableStep;
@@ -168,39 +238,55 @@ public static class GlowRenderer
             float w2 = r / (1 + r), w1 = 1 - w2;
             float dSoft = MathF.Max(0, d1 - k * MathF.Log(1 + r));
 
-            float cr = c0.R, cg = c0.G, cb = c0.B;
-            if (n > 1)
-            {
-                if (w2 > 0.004f)
-                {
-                    cr = t.R[i1] * w1 + t.R[i2] * w2; cg = t.G[i1] * w1 + t.G[i2] * w2; cb = t.B[i1] * w1 + t.B[i2] * w2;
-                }
-                else { cr = t.R[i1]; cg = t.G[i1]; cb = t.B[i1]; }
-            }
             float wave = w1 * t.Ripple[i1] + (w2 > 0.004f ? w2 * t.Ripple[i2] : w2 * t.Ripple[i1]);
-
-            float lit = 1;
-            if (mode >= 1)
+            float cr = c0.R, cg = c0.G, cb = c0.B;
+            float T, Gl, alphaLit, white;
+            if (liquid)
             {
-                float rl = MathF.Exp(-(d2 - d1) / kl);
-                float wl2 = rl / (1 + rl);
-                float nn = (1 - wl2) * t.Plasma[i1] + wl2 * t.Plasma[i2];
-                if (mode == 2) lit = 0.45f + 0.55f * Smooth(-0.65f, 0.55f, nn);
-                else if (mode == 3) lit = 0.12f + 0.88f * Smooth(-0.4f - beat * 0.7f - energy * 0.3f, 0.45f - beat * 0.5f, nn);
-                else lit = 0.1f + 0.9f * Smooth(-0.35f, 0.55f, nn);
+                // The band moves by angle around the screen centre, like a clock hand
+                // (fast past the corners, slower mid-edge), as on the Mac.
+                float sa = Fract((MathF.Atan2(cy, cx) - th0) / (2 * MathF.PI)) * per;
+                float a0 = 2 * MathF.PI * (sa / per + phase);
+                float g = (mode == 3 ? MathF.Sin(a0) + 0.12f : mode == 2 ? MathF.Sin(a0) + 0.35f : MathF.Sin(2 * a0) + 0.12f);
+                if (n > 1)
+                {
+                    float ga = Smooth(c0a, c0b, g);
+                    Rgb col = n > 2 ? c2c.Lerp(c1c, Smooth(0, 0.45f, ga)).Lerp(c0, Smooth(0.45f, 0.95f, ga)) : c1c.Lerp(c0, ga);
+                    cr = col.R; cg = col.G; cb = col.B;
+                }
+                float gb = g + bump;
+                float shapeLit = Smooth(0.15f, 0.85f, gb);
+                float bandBright = Smooth(-0.24f, 0.04f, gb);
+                float lobe = 0.5f + 0.5f * MathF.Sin(3 * 2 * MathF.PI * (sa / per + phase) + 1);
+                shapeLit *= 0.82f + 0.18f * lobe;
+                alphaLit = (0.4f + 0.6f * bandBright) * (0.45f + 0.55f * shapeLit);
+                T = MathF.Max(0.75f, T0 * (0.2f + 0.6f * bandBright + 2.0f * shapeLit) * (1 + (0.1f + 0.45f * shapeLit) * wave));
+                Gl = G * (0.25f + 1.4f * MathF.Pow(shapeLit, 1.2f));
+                white = shapeLit;   // used below for the soft body
             }
-            float T = MathF.Max(0.75f, T0 * (1 + amount * 0.12f * wave) * (0.4f + 0.85f * lit));
-            float Gl = G * (0.2f + 1.25f * MathF.Pow(lit, 1.4f));
+            else
+            {
+                if (n > 1)
+                {
+                    if (w2 > 0.004f) { cr = t.R[i1] * w1 + t.R[i2] * w2; cg = t.G[i1] * w1 + t.G[i2] * w2; cb = t.B[i1] * w1 + t.B[i2] * w2; }
+                    else { cr = t.R[i1]; cg = t.G[i1]; cb = t.B[i1]; }
+                }
+                alphaLit = 1;
+                T = MathF.Max(0.75f, T0 * (1 + amount * 0.12f * wave) * 1.25f);
+                Gl = G * 1.45f;
+                white = 1;
+            }
             float core = 1 - Smooth(T - aa, T + aa, d);
             float hot = MathF.Exp(-d / MathF.Max(0.6f, T * 0.45f)) * core;
             float xx = MathF.Max(0, MathF.Min(d, dSoft) - T);
             float halo = Gl > 0.3f ? (0.55f * MathF.Exp(-xx / (Gl * 0.45f)) + 0.07f * MathF.Exp(-xx / (Gl * 1.4f))) * (1 - Smooth(Gl * 2.2f, Gl * 4f, xx)) : 0;
-            float alpha = Math.Clamp(MathF.Max(core, halo * (0.9f + 0.1f * core)), 0, 1) * lit;
-            float centre = core * (1 - Smooth(0, MathF.Max(1, T * 0.85f), d));
-            float white = MathF.Max(hot * 0.25f, centre * 0.55f) * (0.5f + 0.5f * lit);
+            float alpha = Math.Clamp(MathF.Max(core, halo * (0.9f + 0.1f * core)), 0, 1) * alphaLit;
+            float mixW;
+            if (liquid) mixW = (0.05f + 0.18f * white) * core + hot * 0.05f;   // soft, lighter body; the thin line keeps the deep colour
+            else { float centre = core * (1 - Smooth(0, MathF.Max(1, T * 0.85f), d)); mixW = MathF.Max(hot * 0.25f, centre * 0.55f); }
             float a = alpha * presence;
             if (a <= 0.002f) { pixels[row + x] = 0; continue; }
-            float lr = MathF.Min(1, (cr + (1 - cr) * white) * level), lg = MathF.Min(1, (cg + (1 - cg) * white) * level), lb = MathF.Min(1, (cb + (1 - cb) * white) * level);
+            float lr = MathF.Min(1, (cr + (1 - cr) * mixW) * level), lg = MathF.Min(1, (cg + (1 - cg) * mixW) * level), lb = MathF.Min(1, (cb + (1 - cb) * mixW) * level);
             int A = (int)(a * 255 + 0.5f), Rr = (int)(lr * a * 255 + 0.5f), Gg = (int)(lg * a * 255 + 0.5f), Bb = (int)(lb * a * 255 + 0.5f);
             pixels[row + x] = (A << 24) | (Rr << 16) | (Gg << 8) | Bb;
         }
@@ -359,12 +445,15 @@ public sealed class EdgeLight
             anim.EdgeWeights = new[] { b.Width / per, b.Height / per, b.Width / per, b.Height / per };
         }
         else anim.EdgeWeights = null;
-        anim.Step(dt, mode, live ? signal.Energy : 0, live ? signal.Beat : 0, colors, first);
+        anim.Step(dt, mode, live ? signal.Energy : 0, live ? signal.Beat : 0, colors, first,
+            live ? signal.Period : 0, live ? signal.Confidence : 0, signal.BeatTime, AudioLevel.Now, live ? signal.Section : 0);
         first = false;
         foreach (var sc in screens)
         {
             float W = (float)(sc.Monitor.Bounds.Width / sc.Monitor.Scale), H = (float)(sc.Monitor.Bounds.Height / sc.Monitor.Scale);
-            var frame = new GlowFrame(W, H, 10, s.ThicknessPoints, s.GlowPoints, mode, anim, presence);
+            // Louder parts of the song: a little thicker and glowier, as on the Mac.
+            float dr = mode == Motion.MusicSync ? anim.Drive : 0;
+            var frame = new GlowFrame(W, H, 10, s.ThicknessPoints * (1 + 0.15f * dr), s.GlowPoints * (1 + 0.25f * dr), mode, anim, presence);
             foreach (var w in sc.Strips) w.Draw(frame);
         }
         // Other always-on-top windows (the taskbar) can cover the light; take it back.

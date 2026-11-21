@@ -33,6 +33,30 @@ for (int k = 0; k < 40; k++) beat.Process(quiet, k * 0.02);
 var hit = beat.Process(loud, 1.0);
 Check(hit.Beat > 0.5f && hit.Energy > 0, "beat onset");
 
+// Tempo: kick drums at a known tempo; the tracker must find it and where the beats fall.
+foreach (var bpm in new[] { 120.0, 92.0, 140.0 })
+{
+    var tempo = new BeatDetector(48000);
+    var rng = new Random(1);
+    var hopBuf = new float[480];
+    double gap = 60 / bpm;
+    for (int start = 0; start < 48000 * 20; start += 480)
+    {
+        for (int i = 0; i < 480; i++)
+        {
+            double tt = (start + i) / 48000.0, since = tt % gap;
+            double kick = since < 0.12 ? Math.Sin(2 * Math.PI * 55 * since) * Math.Exp(-since * 25) * 0.8 : 0;
+            hopBuf[i] = (float)(kick + (rng.NextDouble() - 0.5) * 0.01);
+        }
+        tempo.Process(hopBuf, start / 48000.0);
+    }
+    double found = tempo.Period > 0 ? 60 / tempo.Period : 0;
+    double off = tempo.BeatTime % gap; off = Math.Min(off, gap - off);
+    Console.WriteLine($"  tempo {bpm}: found {found:0.0} bpm, sure {tempo.Confidence:0.00}, beat off by {off * 1000:0} ms");
+    Check(Math.Abs(found - bpm) < 2.5 && tempo.Confidence > 0.3, $"tempo {bpm} bpm");
+    Check(off < 0.04, $"beat position at {bpm} bpm");
+}
+
 Check(MediaWatcher.FriendlyName("Spotify.exe") == "Spotify" && MediaWatcher.FriendlyName("AppleInc.AppleMusicWin_nzyj5cx40ttqa!App") == "Apple Music", "player names");
 
 foreach (var app in new[] { "Lune", "Vers" })

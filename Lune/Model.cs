@@ -27,7 +27,7 @@ public sealed class LuneSettings
     public string LastVersion { get; set; } = "";
 
     public float ThicknessPoints => (float)(1.0 + Thickness * 17.0);
-    public float GlowPoints => (float)(Glow * Glow * 110.0);
+    public float GlowPoints => (float)(Glow * 30.0);   // as on the Mac: Lumn at full Glow is ~30 pt of soft light
 }
 
 /// Shared state: settings, the song, its colors and the audio level.
